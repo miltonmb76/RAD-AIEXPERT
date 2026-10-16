@@ -18,6 +18,7 @@ const DifferentialTreeModule = React.lazy(() => import("./components/Differentia
 const SemioticsConductMatrixModule = React.lazy(() => import("./components/SemioticsConductMatrixModule").then(m => ({ default: m.SemioticsConductMatrixModule })));
 const FindingsInfographicModule = React.lazy(() => import("./components/FindingsInfographicModule").then(m => ({ default: m.FindingsInfographicModule })));
 const DominantLesionCardModule = React.lazy(() => import("./components/DominantLesionCardModule").then(m => ({ default: m.DominantLesionCardModule })));
+const FindingExplainerModule = React.lazy(() => import("./components/FindingExplainerModule").then(m => ({ default: m.FindingExplainerModule })));
 const DiagnosticPackModule = React.lazy(() => import("./components/DiagnosticPackModule").then(m => ({ default: m.DiagnosticPackModule })));
 const FindingsMapModule = React.lazy(() => import("./components/FindingsMapModule").then(m => ({ default: m.FindingsMapModule })));
 const DiagnosisAnchorBar = React.lazy(() => import("./components/DiagnosisAnchorBar").then(m => ({ default: m.DiagnosisAnchorBar })));
@@ -83,6 +84,7 @@ export {
   SemioticsConductMatrixModule,
   FindingsInfographicModule,
   DominantLesionCardModule,
+  FindingExplainerModule,
   DiagnosticPackModule,
   FindingsMapModule,
   DiagnosisAnchorBar,

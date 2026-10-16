@@ -8365,5 +8365,175 @@ JSON:
     }
   });
 
+  /**
+   * Multi-finding Explainer: plan 1–3 findings, then generate CGI (+ optional US match)
+   * nearly in parallel for each card.
+   */
+  app.post("/api/generate-finding-explainers", async (req: express.Request, res: express.Response) => {
+    try {
+      const {
+        reportText,
+        organOrStudy,
+        laterality,
+        requestedModel,
+        maxFindings,
+        findingHints,
+        galleryImages,
+      } = req.body;
+
+      if (!reportText || !String(reportText).trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "Se requiere el texto del informe radiológico.",
+        });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.8-flash");
+      const reportSlice = String(reportText).slice(0, 4000);
+      const maxN = Math.min(3, Math.max(1, Number(maxFindings) || 2));
+      const gallery = Array.isArray(galleryImages)
+        ? galleryImages
+            .filter((g: any) => g && g.url && String(g.url).startsWith("data:"))
+            .slice(0, 24)
+        : [];
+
+      const galleryCatalog = gallery
+        .map(
+          (g: any, i: number) =>
+            `[${i}] id=${g.id || i} caption="${String(g.caption || g.label || "").slice(0, 120)}"`
+        )
+        .join("\n");
+
+      const planPrompt = `Eres radiólogo. Extrae hasta ${maxN} hallazgos clinicos DISTINTOS del informe para un EXPLAINER (ficha corta eco+CGI+3 bullets).
+
+INFORME:
+"""
+${reportSlice}
+"""
+Estudio: "${organOrStudy || ""}"
+Lateralidad pedida: "${laterality || "auto"}"
+Pistas del usuario / ancla:
+"""
+${findingHints || "Ninguna — elige los hallazgos mas relevantes (dominante primero)."}
+"""
+Galeria de capturas (indices para emparejar eco):
+${galleryCatalog || "(sin capturas)"}
+
+Devuelve JSON estricto:
+{
+  "studyRegion": "organo/region",
+  "title": "Explainer de hallazgos",
+  "findings": [
+    {
+      "label": "nombre corto del hallazgo",
+      "site": "ubicacion + lateralidad",
+      "whatIs": "1-2 frases: que es el hallazgo (naturaleza / tipo)",
+      "whereIs": "1 frase: donde esta (organo, lado, segmento)",
+      "implies": "2-3 frases: ampliar la explicacion del hallazgo (significado morfologico/fisiopatologico, por que se ve asi, relevancia diagnostica). PROHIBIDO recomendaciones, manejo, seguimiento, conducta o 'se sugiere'.",
+      "cgiFocus": "descripcion anatomica breve para CGI 3D del hallazgo",
+      "galleryIndex": null
+    }
+  ]
+}
+
+Reglas:
+- Maximo ${maxN} findings. Si el usuario listo hallazgos concretos, priorizalos.
+- No inventes patologia ausente del informe.
+- galleryIndex = indice entero de la galeria cuya caption/label mejor corresponde a ESE hallazgo, o null.
+- Cada finding debe ser distinto (no repetir el mismo con otro nombre).
+- "implies" NO es manejo clinico: es ampliacion explicativa del hallazgo (que significa, como se interpreta morfologicamente). Nunca digas "control", "seguimiento", "biopsia", "se recomienda" ni equivalentes.`;
+
+      const planResp = await ai.models.generateContent({
+        model,
+        contents: [{ text: planPrompt }],
+        config: { responseMimeType: "application/json" },
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResp.text || "{}");
+      } catch {
+        planJson = {};
+      }
+
+      const planned = Array.isArray(planJson.findings)
+        ? planJson.findings.slice(0, maxN)
+        : [];
+      if (!planned.length) {
+        return res.status(422).json({
+          success: false,
+          error: "No se pudieron extraer hallazgos para el explainer.",
+        });
+      }
+
+      const cards = await Promise.all(
+        planned.map(async (f: any, idx: number) => {
+          const label = String(f?.label || `Hallazgo ${idx + 1}`).trim();
+          const site = String(f?.site || "").trim();
+          const whatIs = String(f?.whatIs || "").trim();
+          const whereIs = String(f?.whereIs || "").trim();
+          const implies = String(f?.implies || "").trim();
+          const cgiFocus = String(f?.cgiFocus || label).trim();
+          const gIdx =
+            typeof f?.galleryIndex === "number" &&
+            f.galleryIndex >= 0 &&
+            f.galleryIndex < gallery.length
+              ? f.galleryIndex
+              : -1;
+          const eco = gIdx >= 0 ? gallery[gIdx] : null;
+
+          let cgiImageUrl = "";
+          try {
+            const promptToUse =
+              `Premium photorealistic medical CGI anatomic cutaway focused on: ${cgiFocus}. ` +
+              `Site: ${site || organOrStudy || "anatomy"}. Finding label: ${label}. ` +
+              `Show the lesion/structure clearly in correct laterality (patient AP convention). ` +
+              `Clean unlabeled anatomy only. ${FAITHFUL_STYLE}`;
+            cgiImageUrl = await generateMedicalImage(ai, promptToUse, {
+              referenceImageUrl: eco?.url || null,
+            });
+          } catch (cgiErr: any) {
+            console.warn(
+              "finding-explainer CGI failed for",
+              label,
+              cgiErr?.message || cgiErr
+            );
+          }
+
+          return {
+            id: `explainer-${idx + 1}-${Date.now()}`,
+            label,
+            site,
+            whatIs,
+            whereIs,
+            implies,
+            ecoImageUrl: eco?.url || null,
+            ecoCaption: eco
+              ? String(eco.caption || eco.label || "Captura del estudio")
+              : null,
+            ecoImageId: eco?.id || null,
+            cgiImageUrl: cgiImageUrl || null,
+            cgiCaption: label,
+            includeInReport: true,
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: {
+          title: planJson.title || "Explainer de hallazgos",
+          studyRegion: planJson.studyRegion || organOrStudy || "",
+          cards,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error("Error en /api/generate-finding-explainers:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
 }
 

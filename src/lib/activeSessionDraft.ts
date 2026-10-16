@@ -80,6 +80,9 @@ export type ActiveSessionAnnexBundle = {
   includeFocalLesion3dInReport: boolean;
   usPlaneSimulatorData: unknown | null;
   includeUsPlaneSimulatorInReport: boolean;
+  /** Multi-finding explainer (eco + CGI + bullets). */
+  findingExplainerData?: unknown | null;
+  includeFindingExplainerInReport?: boolean;
   /** Optional clickable annex index in the official PDF. */
   includeAnnexIndexInReport?: boolean;
   thyroid3dData: unknown | null;
@@ -205,6 +208,9 @@ export function annexBundleHasContent(
       b.findingsInfographicData ||
       (Array.isArray(b.diagnosticPacks) && b.diagnosticPacks.length > 0) ||
       b.dominantLesionCardData ||
+      (b.findingExplainerData &&
+        Array.isArray((b.findingExplainerData as any).cards) &&
+        (b.findingExplainerData as any).cards.length > 0) ||
       b.measurementGaugeData ||
       b.biomechanicalRadarData ||
       b.atlas3dData ||

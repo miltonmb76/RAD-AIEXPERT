@@ -17,6 +17,7 @@ import {
   SemioticsConductMatrixModule,
   FindingsInfographicModule,
   DominantLesionCardModule,
+  FindingExplainerModule,
   DiagnosticPackModule,
   FindingsMapModule,
   DiagnosisAnchorBar,
@@ -46,7 +47,7 @@ import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
 
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, DominantLesionCardData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, DominantLesionCardData, FindingExplainerData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
   applyPendingEnrichmentChanges,
@@ -1611,6 +1612,9 @@ export default function App() {
   const [isDiagnosticPackOpen, setIsDiagnosticPackOpen] = useState<boolean>(false);
   const [isFindingsMapOpen, setIsFindingsMapOpen] = useState<boolean>(false);
   const [dominantLesionCardData, setDominantLesionCardData] = useState<DominantLesionCardData | null>(null);
+  const [findingExplainerData, setFindingExplainerData] = useState<FindingExplainerData | null>(null);
+  const [includeFindingExplainerInReport, setIncludeFindingExplainerInReport] = useState<boolean>(true);
+  const [isFindingExplainerOpen, setIsFindingExplainerOpen] = useState<boolean>(false);
   const [includeDominantLesionCardInReport, setIncludeDominantLesionCardInReport] = useState<boolean>(true);
   const [isDominantLesionCardOpen, setIsDominantLesionCardOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
@@ -1720,6 +1724,8 @@ export default function App() {
     includeDiagnosticPackInReport,
     dominantLesionCardData,
     includeDominantLesionCardInReport,
+    findingExplainerData,
+    includeFindingExplainerInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -2831,6 +2837,8 @@ Ejemplo:
     includeDiagnosticPackInReport: true,
     dominantLesionCardData: null as any,
     includeDominantLesionCardInReport: true,
+    findingExplainerData: null as any,
+    includeFindingExplainerInReport: true,
     measurementGaugeData: null as any,
     includeMeasurementGaugesInReport: true,
     biomechanicalRadarData: null as any,
@@ -2908,6 +2916,8 @@ Ejemplo:
     includeDiagnosticPackInReport,
     dominantLesionCardData,
     includeDominantLesionCardInReport,
+    findingExplainerData,
+    includeFindingExplainerInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     biomechanicalRadarData,
@@ -2998,6 +3008,8 @@ Ejemplo:
     includeDiagnosticPackInReport,
     dominantLesionCardData,
     includeDominantLesionCardInReport,
+    findingExplainerData,
+    includeFindingExplainerInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     biomechanicalRadarData,
@@ -3090,6 +3102,8 @@ Ejemplo:
       }
       setIncludeDiagnosticPackInReport(bundle.includeDiagnosticPackInReport !== false);
       if (bundle.dominantLesionCardData) setDominantLesionCardData(bundle.dominantLesionCardData as any);
+      if (bundle.findingExplainerData) setFindingExplainerData(bundle.findingExplainerData as any);
+      setIncludeFindingExplainerInReport(bundle.includeFindingExplainerInReport !== false);
       setIncludeDominantLesionCardInReport(bundle.includeDominantLesionCardInReport !== false);
       if (bundle.measurementGaugeData) setMeasurementGaugeData(bundle.measurementGaugeData as any);
       setIncludeMeasurementGaugesInReport(bundle.includeMeasurementGaugesInReport !== false);
@@ -3434,6 +3448,9 @@ Ejemplo:
     setIsDiagnosticPackOpen(false);
     setIsFindingsMapOpen(false);
     setDominantLesionCardData(null);
+    setFindingExplainerData(null);
+    setIncludeFindingExplainerInReport(true);
+    setIsFindingExplainerOpen(false);
     setIncludeDominantLesionCardInReport(true);
     setIsDominantLesionCardOpen(false);
     setAtlasDirectivesFromScorecard("");
@@ -5994,6 +6011,7 @@ Ejemplo:
     diagnosticPackData,
     diagnosticPacks,
     dominantLesionCardData,
+    findingExplainerData,
     focalLesion3dData,
     getParagraphSeverity,
     includeAbdomen3dInReport,
@@ -6006,6 +6024,7 @@ Ejemplo:
     includeFindingsInfographicInReport,
     includeDiagnosticPackInReport,
     includeDominantLesionCardInReport,
+    includeFindingExplainerInReport,
     includeFocalLesion3dInReport,
     includeKidney3dInReport,
     includeKnee3dInReport,
@@ -12154,6 +12173,31 @@ Ejemplo:
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-orange-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-orange-200 flex items-center gap-2">
+                                    <Layers className="h-4 w-4 text-orange-400" />
+                                    Explainer de hallazgos
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    1?3 fichas apiladas: eco + CGI 3D + bullets (que es / donde / implica), en paralelo.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsFindingExplainerOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isFindingExplainerOpen
+                                    ? "bg-orange-700 text-white"
+                                    : "bg-orange-600/80 hover:bg-orange-500 text-white"
+                                }`}
+                              >
+                                {isFindingExplainerOpen ? "Ocultar explainer" : "Abrir explainer de hallazgos"}
+                              </button>
+                            </div>
+
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-indigo-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -12762,6 +12806,25 @@ Ejemplo:
                                   setFocalLesion3dData={setFocalLesion3dData}
                                   setIncludeFocalLesion3dInReport={setIncludeFocalLesion3dInReport}
                                   scorecardData={clinicalScorecardData}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isFindingExplainerOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando explainer de hallazgos...</div>}>
+                                <FindingExplainerModule
+                                  selectedModel={modelFor("finding_explainer")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  laterality={laterality}
+                                  diagnosisAnchor={diagnosisAnchor}
+                                  explainerData={findingExplainerData}
+                                  setExplainerData={setFindingExplainerData}
+                                  includeInReport={includeFindingExplainerInReport}
+                                  setIncludeInReport={setIncludeFindingExplainerInReport}
+                                  attachedImages={attachedImages}
                                 />
                               </React.Suspense>
                             </div>

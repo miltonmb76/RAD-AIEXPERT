@@ -58,6 +58,7 @@ export type ModelTask =
   | "semiotics_conduct_matrix"
   | "findings_infographic"
   | "dominant_lesion_card"
+  | "finding_explainer"
   | "negativity_checklist"
   | "second_reader"
   | "chat"
@@ -95,6 +96,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "semiotics_conduct_matrix",
   "findings_infographic",
   "dominant_lesion_card",
+  "finding_explainer",
   "negativity_checklist",
   "second_reader",
   "default",

@@ -28,6 +28,8 @@ import { renderThyroid3DPageToPdf } from "../utils/thyroid3dPdfRenderer";
 import { renderUsImagesToPdf } from "../utils/usImagesPdfRenderer";
 import { renderUsPlaneSimulatorAnnexToPDF } from "../utils/usPlaneSimulatorPdfRenderer";
 import { createAnnexTracker, finalizeAnnexIndex } from "../utils/annexIndexPdf";
+import { renderFindingExplainerAnnexToPDF } from "../utils/findingExplainerPdfRenderer";
+import { findingExplainerIsRenderable } from "../lib/findingExplainer";
 import { renderVascular3DPageToPdf } from "../utils/vascular3dPdfRenderer";
 import { renderWrist3DPageToPdf } from "../utils/wrist3dPdfRenderer";
 import { formatDateToDMY } from "./appFormatters";
@@ -65,6 +67,8 @@ export type NativePdfDownloadDeps = {
   /** Multi-pack annexes (preferred over diagnosticPackData). */
   diagnosticPacks?: any[];
   dominantLesionCardData: any;
+  findingExplainerData?: any;
+  includeFindingExplainerInReport?: boolean;
   focalLesion3dData: any;
   getParagraphSeverity: (text: string) => "critical" | "altered" | "normal";
   includeAbdomen3dInReport: boolean;
@@ -159,6 +163,8 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       diagnosticPackData,
       diagnosticPacks,
       dominantLesionCardData,
+      findingExplainerData,
+      includeFindingExplainerInReport,
       focalLesion3dData,
       getParagraphSeverity,
       includeAbdomen3dInReport,
@@ -3139,6 +3145,30 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
               : null,
             focal3dDataUrl: focalUrl || null,
             focal3dCaption: focalPanel?.panelTitle || "Corte 3D",
+          });
+        });
+      }
+
+      // --- ANEXO: EXPLAINER DE HALLAZGOS (multi: eco + CGI + bullets) ---
+      const activeFindingExplainer = studyOverride
+        ? (studyOverride as any).findingExplainerData
+        : (pdfStateRef.current?.findingExplainerData || findingExplainerData);
+      const shouldIncludeFindingExplainer = studyOverride
+        ? ((studyOverride as any).includeFindingExplainerInReport !== false)
+        : ((pdfStateRef.current?.includeFindingExplainerInReport !== false) &&
+            includeFindingExplainerInReport !== false);
+      if (
+        activeFindingExplainer &&
+        shouldIncludeFindingExplainer &&
+        findingExplainerIsRenderable(activeFindingExplainer)
+      ) {
+        await trackAnnex("Explainer de hallazgos", async () => {
+          await renderFindingExplainerAnnexToPDF(doc, activeFindingExplainer, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
           });
         });
       }
