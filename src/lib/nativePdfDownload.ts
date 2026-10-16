@@ -3162,8 +3162,8 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         shouldIncludeFindingExplainer &&
         findingExplainerIsRenderable(activeFindingExplainer)
       ) {
-        await trackAnnex("Explainer de hallazgos", () => {
-          renderFindingExplainerAnnexToPDF(doc, activeFindingExplainer, {
+        await trackAnnex("Explainer de hallazgos", async () => {
+          await renderFindingExplainerAnnexToPDF(doc, activeFindingExplainer, {
             marginX,
             pageWidth,
             pageHeight,
