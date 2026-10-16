@@ -5,9 +5,11 @@ import {
   Sparkles,
   Image as ImageIcon,
   Box,
+  X,
 } from "lucide-react";
 import {
   FINDING_EXPLAINER_MAX_CARDS,
+  assignEcoToExplainerCard,
   findingExplainerIsRenderable,
   normalizeFindingExplainerData,
   type FindingExplainerData,
@@ -51,6 +53,8 @@ export const FindingExplainerModule: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [extraFindings, setExtraFindings] = useState("");
   const [maxCards, setMaxCards] = useState(2);
+  /** Card id whose eco gallery picker is open */
+  const [pickingEcoFor, setPickingEcoFor] = useState<string | null>(null);
 
   const gallery = useMemo(
     () =>
@@ -64,6 +68,28 @@ export const FindingExplainerModule: React.FC<Props> = ({
         })),
     [attachedImages]
   );
+
+  const assignEco = (
+    cardId: string,
+    img: { id: string; url: string; caption: string; label: string } | null
+  ) => {
+    if (!explainerData) return;
+    setExplainerData(
+      assignEcoToExplainerCard(
+        explainerData,
+        cardId,
+        img
+          ? {
+              id: img.id,
+              url: img.url,
+              caption: img.caption || img.label,
+              label: img.label,
+            }
+          : null
+      )
+    );
+    setPickingEcoFor(null);
+  };
 
   const handleGenerate = async () => {
     if (!reportText?.trim()) {
@@ -196,6 +222,17 @@ export const FindingExplainerModule: React.FC<Props> = ({
         </div>
       </div>
 
+      <p className="text-[11px] text-slate-500 leading-relaxed">
+        {gallery.length > 0 ? (
+          <>
+            {gallery.length} captura{gallery.length === 1 ? "" : "s"} en galería.
+            Tras generar, elige la eco de cada ficha con <span className="text-amber-200/90">Elegir eco</span>.
+          </>
+        ) : (
+          <>Sube capturas a la galería del estudio para poder elegir la eco de cada ficha.</>
+        )}
+      </p>
+
       {error && (
         <div className="rounded-xl border border-rose-700/50 bg-rose-950/40 px-3 py-2 text-[12px] text-rose-200">
           {error}
@@ -232,9 +269,27 @@ export const FindingExplainerModule: React.FC<Props> = ({
               <div className="p-4 md:p-5 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <figure className="m-0">
-                    <p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-700 mb-1.5 flex items-center gap-1">
-                      <ImageIcon className="w-3 h-3" /> Eco real
-                    </p>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-700 flex items-center gap-1 m-0">
+                        <ImageIcon className="w-3 h-3" /> Eco real
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPickingEcoFor(
+                            pickingEcoFor === card.id ? null : card.id
+                          )
+                        }
+                        disabled={gallery.length === 0}
+                        className="text-[10px] font-semibold text-amber-800 hover:text-amber-950 disabled:text-stone-400 disabled:cursor-not-allowed underline-offset-2 hover:underline"
+                      >
+                        {pickingEcoFor === card.id
+                          ? "Cerrar"
+                          : card.ecoImageUrl
+                            ? "Cambiar eco"
+                            : "Elegir eco"}
+                      </button>
+                    </div>
                     <div className="rounded-lg border border-stone-200 bg-black aspect-[4/3] overflow-hidden flex items-center justify-center">
                       {card.ecoImageUrl ? (
                         <img
@@ -244,14 +299,61 @@ export const FindingExplainerModule: React.FC<Props> = ({
                         />
                       ) : (
                         <span className="text-[11px] text-stone-500 px-3 text-center">
-                          Sin captura emparejada
+                          {gallery.length
+                            ? "Elige una captura de la galería"
+                            : "Sin capturas en galería"}
                         </span>
                       )}
                     </div>
                     {card.ecoCaption && (
-                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 truncate">
+                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 leading-snug">
                         {card.ecoCaption}
                       </figcaption>
+                    )}
+                    {pickingEcoFor === card.id && (
+                      <div className="mt-2 rounded-xl border border-amber-300/70 bg-amber-50/80 p-2 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-semibold text-amber-900 m-0">
+                            Galería del estudio
+                          </p>
+                          {card.ecoImageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => assignEco(card.id, null)}
+                              className="inline-flex items-center gap-1 text-[10px] text-stone-600 hover:text-rose-700"
+                            >
+                              <X className="w-3 h-3" />
+                              Quitar
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {gallery.map((img) => {
+                            const selected =
+                              card.ecoImageId === img.id ||
+                              card.ecoImageUrl === img.url;
+                            return (
+                              <button
+                                key={img.id}
+                                type="button"
+                                title={img.caption || img.label || "Captura"}
+                                onClick={() => assignEco(card.id, img)}
+                                className={`relative shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition ${
+                                  selected
+                                    ? "border-amber-500 ring-2 ring-amber-300"
+                                    : "border-stone-300 hover:border-amber-400"
+                                }`}
+                              >
+                                <img
+                                  src={img.url}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </figure>
                   <figure className="m-0">
@@ -271,9 +373,9 @@ export const FindingExplainerModule: React.FC<Props> = ({
                         </span>
                       )}
                     </div>
-                    {card.cgiCaption && (
-                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 truncate">
-                        {card.cgiCaption}
+                    {(card.cgiCaption || card.label) && (
+                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 leading-snug">
+                        {card.cgiCaption || card.label}
                       </figcaption>
                     )}
                   </figure>

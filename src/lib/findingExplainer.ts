@@ -28,6 +28,50 @@ export type FindingExplainerData = {
 };
 
 export const FINDING_EXPLAINER_MAX_CARDS = 3;
+/** Max chars for image rotulo under eco/CGI (fits one line in UI + PDF). */
+export const EXPLAINER_ROTULO_MAX = 42;
+
+/**
+ * Short image caption for Explainer cards.
+ * Prefer a short gallery label or finding name ("Colelitiasis") over long
+ * prose captions that get clipped in the layout.
+ */
+export function shortExplainerRotulo(opts: {
+  findingLabel?: string | null;
+  galleryLabel?: string | null;
+  galleryCaption?: string | null;
+  fallback?: string;
+  maxLen?: number;
+}): string {
+  const max = opts.maxLen ?? EXPLAINER_ROTULO_MAX;
+  const clean = (s: string) => String(s || "").replace(/\s+/g, " ").trim();
+  const soft = (s: string) => {
+    if (!s) return "";
+    if (s.length <= max) return s;
+    const cut = s.slice(0, max - 1);
+    const sp = cut.lastIndexOf(" ");
+    return `${(sp > 12 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+  };
+
+  const galLabel = clean(opts.galleryLabel || "");
+  const finding = clean(opts.findingLabel || "");
+  const galCap = clean(opts.galleryCaption || "");
+
+  // Full short gallery rotulo when it already fits
+  if (galLabel && galLabel.length <= max) return galLabel;
+  // Finding name: "Colelitiasis", "Congestión venosa hepática"
+  if (finding && finding.length <= max) return finding;
+  // Full gallery caption only when short enough
+  if (galCap && galCap.length <= max) return galCap;
+
+  if (galLabel) return soft(galLabel);
+  if (finding) return soft(finding);
+  if (galCap) {
+    const clause = (galCap.split(/[.;:—–\n]/)[0] || galCap).trim();
+    return clause.length <= max ? clause : soft(clause);
+  }
+  return opts.fallback || "Captura del estudio";
+}
 
 export function findingExplainerIsRenderable(
   data: FindingExplainerData | null | undefined
@@ -57,18 +101,31 @@ export function normalizeFindingExplainerData(
     .slice(0, max)
     .map((c: any, i: number) => {
       const bullets = Array.isArray(c?.bullets) ? c.bullets.map(String) : [];
+      const label = String(c?.label || c?.finding || `Hallazgo ${i + 1}`).trim();
+      const ecoCaptionRaw = c?.ecoCaption != null ? String(c.ecoCaption) : "";
+      const cgiCaptionRaw = c?.cgiCaption != null ? String(c.cgiCaption) : "";
       return {
         id: String(c?.id || `explainer-${i + 1}`),
-        label: String(c?.label || c?.finding || `Hallazgo ${i + 1}`).trim(),
+        label,
         site: String(c?.site || c?.location || "").trim(),
         whatIs: String(c?.whatIs || bullets[0] || "").trim(),
         whereIs: String(c?.whereIs || bullets[1] || "").trim(),
         implies: String(c?.implies || bullets[2] || "").trim(),
         ecoImageUrl: c?.ecoImageUrl || null,
-        ecoCaption: c?.ecoCaption || null,
+        ecoCaption: ecoCaptionRaw
+          ? shortExplainerRotulo({
+              findingLabel: label,
+              galleryCaption: ecoCaptionRaw,
+              fallback: label,
+            })
+          : null,
         ecoImageId: c?.ecoImageId || null,
         cgiImageUrl: c?.cgiImageUrl || null,
-        cgiCaption: c?.cgiCaption || null,
+        cgiCaption: shortExplainerRotulo({
+          findingLabel: label,
+          galleryCaption: cgiCaptionRaw || label,
+          fallback: label,
+        }),
         includeInReport: c?.includeInReport !== false,
       };
     })
@@ -87,4 +144,42 @@ export function explainerCardsForPdf(
 ): FindingExplainerCard[] {
   if (!data?.cards?.length) return [];
   return data.cards.filter((c) => c && c.includeInReport !== false);
+}
+
+/** Assign (or clear) the US capture on one explainer card. */
+export function assignEcoToExplainerCard(
+  data: FindingExplainerData,
+  cardId: string,
+  eco: {
+    id?: string | null;
+    url?: string | null;
+    caption?: string | null;
+    label?: string | null;
+  } | null
+): FindingExplainerData {
+  return {
+    ...data,
+    cards: data.cards.map((c) => {
+      if (c.id !== cardId) return c;
+      if (!eco?.url) {
+        return {
+          ...c,
+          ecoImageUrl: null,
+          ecoImageId: null,
+          ecoCaption: null,
+        };
+      }
+      return {
+        ...c,
+        ecoImageUrl: eco.url,
+        ecoImageId: eco.id || null,
+        ecoCaption: shortExplainerRotulo({
+          findingLabel: c.label,
+          galleryLabel: eco.label,
+          galleryCaption: eco.caption,
+          fallback: c.label || "Captura del estudio",
+        }),
+      };
+    }),
+  };
 }
