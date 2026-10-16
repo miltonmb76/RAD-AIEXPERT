@@ -1629,6 +1629,8 @@ export default function App() {
   // Ultrasound acquisition plane simulator (auto + chip corrections)
   const [usPlaneSimulatorData, setUsPlaneSimulatorData] = useState<UsPlaneSimulatorData | null>(null);
   const [includeUsPlaneSimulatorInReport, setIncludeUsPlaneSimulatorInReport] = useState<boolean>(true);
+  /** Optional PDF annex table of contents with clickable links. Off by default. */
+  const [includeAnnexIndexInReport, setIncludeAnnexIndexInReport] = useState<boolean>(false);
   /** After labeling a gallery eco with inferable lesionTarget ? offer Bridge instantly. */
   const [bridgeGalleryOffer, setBridgeGalleryOffer] = useState<BridgeGalleryOffer | null>(null);
   const bridgeOfferDismissedRef = useRef<Record<string, number>>({});
@@ -1749,6 +1751,7 @@ export default function App() {
     includeFocalLesion3dInReport,
     usPlaneSimulatorData,
     includeUsPlaneSimulatorInReport,
+    includeAnnexIndexInReport,
     usImagesGridMode,
     includeElastographyInReport,
     elastographyStiffness,
@@ -2839,6 +2842,7 @@ Ejemplo:
     includeFocalLesion3dInReport: true,
     usPlaneSimulatorData: null as any,
     includeUsPlaneSimulatorInReport: true,
+    includeAnnexIndexInReport: false,
     thyroid3dData: null as any,
     includeThyroid3dInReport: true,
     breast3dData: null as any,
@@ -2915,6 +2919,7 @@ Ejemplo:
     includeFocalLesion3dInReport,
     usPlaneSimulatorData,
     includeUsPlaneSimulatorInReport,
+    includeAnnexIndexInReport,
     thyroid3dData,
     includeThyroid3dInReport,
     breast3dData,
@@ -3004,6 +3009,7 @@ Ejemplo:
     includeFocalLesion3dInReport,
     usPlaneSimulatorData,
     includeUsPlaneSimulatorInReport,
+    includeAnnexIndexInReport,
     thyroid3dData,
     includeThyroid3dInReport,
     breast3dData,
@@ -3097,6 +3103,7 @@ Ejemplo:
       setIncludeFocalLesion3dInReport(bundle.includeFocalLesion3dInReport !== false);
       if (bundle.usPlaneSimulatorData) setUsPlaneSimulatorData(bundle.usPlaneSimulatorData as any);
       setIncludeUsPlaneSimulatorInReport(bundle.includeUsPlaneSimulatorInReport !== false);
+      setIncludeAnnexIndexInReport(bundle.includeAnnexIndexInReport === true);
       if (bundle.thyroid3dData) setThyroid3dData(bundle.thyroid3dData as any);
       setIncludeThyroid3dInReport(bundle.includeThyroid3dInReport !== false);
       if (bundle.breast3dData) setBreast3dData(bundle.breast3dData as any);
@@ -3860,6 +3867,7 @@ Ejemplo:
     includeShoulder3dInReport,
     includeThyroid3dInReport,
     includeUsPlaneSimulatorInReport,
+    includeAnnexIndexInReport,
     includeVascular3dInReport,
     includeWrist3dInReport,
     inputReport,
@@ -4665,6 +4673,7 @@ Ejemplo:
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usPlaneSimulatorData: usPlaneSimulatorData || null,
             includeUsPlaneSimulatorInReport: includeUsPlaneSimulatorInReport,
+            includeAnnexIndexInReport: includeAnnexIndexInReport,
             usImagesGridMode: usImagesGridMode || "auto",
             patientSummary: patientSummary || null
           });
@@ -6012,6 +6021,7 @@ Ejemplo:
     includeShoulder3dInReport,
     includeThyroid3dInReport,
     includeUsPlaneSimulatorInReport,
+    includeAnnexIndexInReport,
     includeVascular3dInReport,
     includeWrist3dInReport,
     infographicUrl,
@@ -6180,6 +6190,7 @@ Ejemplo:
     selectedLogo,
     patientName,
     pdfLayoutType,
+    includeAnnexIndexInReport,
     infographicUrl,
     attachInfographicToPatientSummary
   ]);
@@ -15700,6 +15711,26 @@ Ejemplo:
                     <li>Esto forzará al navegador a eliminar completamente el link, el título y la fecha en todos los bordes, dejándote un reporte sumamente pulcro y profesional.</li>
                   </ul>
                 </div>
+              </div>
+
+              <div className="bg-[#0b0f19] p-3.5 rounded-2xl border border-amber-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+                <div className="space-y-0.5 min-w-0">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-amber-200/90">
+                    Indice de anexos (opcional)
+                  </p>
+                  <p className="text-[10.5px] text-slate-400 leading-snug">
+                    Inserta una pagina clicable antes de los anexos (Bridge, Pack, Capturas, etc.) para saltar en el PDF digital.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 shrink-0 cursor-pointer select-none px-3 py-2 rounded-xl border border-slate-700 bg-slate-900/80 text-[11px] font-semibold text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={includeAnnexIndexInReport}
+                    onChange={(e) => setIncludeAnnexIndexInReport(e.target.checked)}
+                    className="rounded border-slate-600 text-amber-500 focus:ring-amber-500/40"
+                  />
+                  Incluir en PDF
+                </label>
               </div>
 
               {/* 🇨🇭 SELECTOR DE DISEÑO EDITORIAL (ESTÁNDAR VS SUIZO) DIRECTO SOBRE EL VISOR */}

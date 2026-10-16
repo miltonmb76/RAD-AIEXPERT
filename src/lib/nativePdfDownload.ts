@@ -27,6 +27,7 @@ import { renderShoulder3DPageToPdf } from "../utils/shoulder3dPdfRenderer";
 import { renderThyroid3DPageToPdf } from "../utils/thyroid3dPdfRenderer";
 import { renderUsImagesToPdf } from "../utils/usImagesPdfRenderer";
 import { renderUsPlaneSimulatorAnnexToPDF } from "../utils/usPlaneSimulatorPdfRenderer";
+import { createAnnexTracker, finalizeAnnexIndex } from "../utils/annexIndexPdf";
 import { renderVascular3DPageToPdf } from "../utils/vascular3dPdfRenderer";
 import { renderWrist3DPageToPdf } from "../utils/wrist3dPdfRenderer";
 import { formatDateToDMY } from "./appFormatters";
@@ -91,6 +92,8 @@ export type NativePdfDownloadDeps = {
   includeShoulder3dInReport: boolean;
   includeThyroid3dInReport: boolean;
   includeUsPlaneSimulatorInReport: boolean;
+  /** Optional clickable annex table of contents (PDF digital). Default off. */
+  includeAnnexIndexInReport?: boolean;
   includeVascular3dInReport: boolean;
   includeWrist3dInReport: boolean;
   infographicUrl: any;
@@ -183,6 +186,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       includeShoulder3dInReport,
       includeThyroid3dInReport,
       includeUsPlaneSimulatorInReport,
+      includeAnnexIndexInReport,
       includeVascular3dInReport,
       includeWrist3dInReport,
       infographicUrl,
@@ -2607,6 +2611,22 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       // Después de la sinopsis por órgano si está presente; si no, después del cuerpo/cuadro.
       // Pack: después de la suite; si no hay suite, después del Corte Focal.
       // Corte Focal: tras suite(+pack) o, sin suite, tras reporte/sinopsis (antes del pack).
+      // Optional clickable annex index: track each annex, insert ToC page before first annex at the end.
+      const shouldIncludeAnnexIndex = studyOverride
+        ? (studyOverride as any).includeAnnexIndexInReport === true
+        : (pdfStateRef.current?.includeAnnexIndexInReport ?? includeAnnexIndexInReport) === true;
+      const annexTracker = createAnnexTracker(doc);
+      let annexInsertAtPage: number | null = null;
+      const noteAnnexInsertPoint = () => {
+        if (annexInsertAtPage == null) {
+          annexInsertAtPage = doc.getNumberOfPages() + 1;
+        }
+      };
+      const trackAnnex = async (title: string, fn: () => void | Promise<void>) => {
+        noteAnnexInsertPoint();
+        await annexTracker.wrap(title, fn);
+      };
+
       const pdfSnap = pdfStateRef.current;
       const pdfSuiteData = <T,>(overrideKey: string, live: T): T =>
         (studyOverride ? (studyOverride as any)[overrideKey] : (pdfSnap as any)?.[overrideKey] ?? live) as T;
@@ -2640,7 +2660,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         (pdfSuiteInclude("includeWrist3dInReport", includeWrist3dInReport) &&
           suiteHasRenderableContent(pdfSuiteData("wrist3dData", wrist3dData)));
 
-      const renderFocalLesionAnnexHere = () => {
+      const renderFocalLesionAnnexHere = async () => {
         const activeFocalLesionData = studyOverride
           ? studyOverride.focalLesion3dData
           : (pdfSnap?.focalLesion3dData || focalLesion3dData);
@@ -2653,12 +2673,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           activeFocalLesionData.panels &&
           activeFocalLesionData.panels.length > 0
         ) {
-          renderFocalLesion3DAnnexToPDF(doc, activeFocalLesionData, {
-            marginX,
-            pageWidth,
-            pageHeight,
-            contentWidth,
-            factor,
+          await trackAnnex("Corte Focal 3D", () => {
+            renderFocalLesion3DAnnexToPDF(doc, activeFocalLesionData, {
+              marginX,
+              pageWidth,
+              pageHeight,
+              contentWidth,
+              factor,
+            });
           });
         }
       };
@@ -2688,19 +2710,25 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           (p) => p && p.includeInReport !== false && diagnosticPackIsRenderable(p)
         );
         for (let i = 0; i < toRender.length; i++) {
-          await renderDiagnosticPackAnnexToPDF(doc, toRender[i], {
-            marginX,
-            pageWidth,
-            pageHeight,
-            annexIndex: i + 1,
-            annexTotal: toRender.length,
+          const packTitle =
+            toRender.length > 1
+              ? `Pack diagnostico (${i + 1}/${toRender.length})`
+              : "Pack diagnostico";
+          await trackAnnex(packTitle, async () => {
+            await renderDiagnosticPackAnnexToPDF(doc, toRender[i], {
+              marginX,
+              pageWidth,
+              pageHeight,
+              annexIndex: i + 1,
+              annexTotal: toRender.length,
+            });
           });
         }
       };
 
       if (!anySuiteInPdf) {
         // Sin suite: Corte Focal tras reporte/sinopsis, luego Pack diagnóstico
-        renderFocalLesionAnnexHere();
+        await renderFocalLesionAnnexHere();
         await renderDiagnosticPackAnnexHere();
       }
 
@@ -2709,50 +2737,66 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       const activeVascularData = studyOverride ? studyOverride.vascular3dData : (pdfStateRef.current?.vascular3dData || vascular3dData);
       const shouldIncludeVascular = studyOverride ? (studyOverride.includeVascular3dInReport !== false) : (pdfStateRef.current?.includeVascular3dInReport !== false && includeVascular3dInReport);
       if (activeVascularData && shouldIncludeVascular && ((activeVascularData.panels && activeVascularData.panels.length > 0) || (activeVascularData.hemodynamicTable && activeVascularData.hemodynamicTable.length > 0))) {
-        await renderVascular3DPageToPdf(doc, activeVascularData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Vascular 3D", async () => {
+          await renderVascular3DPageToPdf(doc, activeVascularData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       // --- 5.64. ANEXO: SUITE TIROIDES 3D (PÁGINA COMPLETA) ---
       const activeThyroidData = studyOverride ? studyOverride.thyroid3dData : (pdfStateRef.current?.thyroid3dData || thyroid3dData);
       const shouldIncludeThyroid = studyOverride ? (studyOverride.includeThyroid3dInReport !== false) : (pdfStateRef.current?.includeThyroid3dInReport !== false && includeThyroid3dInReport);
       if (activeThyroidData && shouldIncludeThyroid && (activeThyroidData.panels?.length || activeThyroidData.noduleTable?.length)) {
-        await renderThyroid3DPageToPdf(doc, activeThyroidData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Tiroides 3D", async () => {
+          await renderThyroid3DPageToPdf(doc, activeThyroidData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeBreastData = studyOverride ? studyOverride.breast3dData : (pdfStateRef.current?.breast3dData || breast3dData);
       const shouldIncludeBreast = studyOverride ? (studyOverride.includeBreast3dInReport !== false) : (pdfStateRef.current?.includeBreast3dInReport !== false && includeBreast3dInReport);
       if (activeBreastData && shouldIncludeBreast && (activeBreastData.panels?.length || activeBreastData.lesionTable?.length)) {
-        await renderBreast3DPageToPdf(doc, activeBreastData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Mama 3D", async () => {
+          await renderBreast3DPageToPdf(doc, activeBreastData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeShoulderData = studyOverride ? studyOverride.shoulder3dData : (pdfStateRef.current?.shoulder3dData || shoulder3dData);
       const shouldIncludeShoulder = studyOverride ? (studyOverride.includeShoulder3dInReport !== false) : (pdfStateRef.current?.includeShoulder3dInReport !== false && includeShoulder3dInReport);
       if (activeShoulderData && shouldIncludeShoulder && (activeShoulderData.panels?.length || activeShoulderData.findingTable?.length)) {
-        await renderShoulder3DPageToPdf(doc, activeShoulderData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Hombro 3D", async () => {
+          await renderShoulder3DPageToPdf(doc, activeShoulderData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeKneeData = studyOverride ? studyOverride.knee3dData : (pdfStateRef.current?.knee3dData || knee3dData);
       const shouldIncludeKnee = studyOverride ? (studyOverride.includeKnee3dInReport !== false) : (pdfStateRef.current?.includeKnee3dInReport !== false && includeKnee3dInReport);
       if (activeKneeData && shouldIncludeKnee && (activeKneeData.panels?.length || activeKneeData.findingTable?.length)) {
-        await renderKnee3DPageToPdf(doc, activeKneeData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Rodilla 3D", async () => {
+          await renderKnee3DPageToPdf(doc, activeKneeData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeAnkleData = studyOverride ? studyOverride.ankle3dData : (pdfStateRef.current?.ankle3dData || ankle3dData);
       const shouldIncludeAnkle = studyOverride ? (studyOverride.includeAnkle3dInReport !== false) : (pdfStateRef.current?.includeAnkle3dInReport !== false && includeAnkle3dInReport);
       if (activeAnkleData && shouldIncludeAnkle && (activeAnkleData.panels?.length || activeAnkleData.findingTable?.length)) {
-        await renderAnkle3DPageToPdf(doc, activeAnkleData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Tobillo 3D", async () => {
+          await renderAnkle3DPageToPdf(doc, activeAnkleData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeKidneyData = studyOverride ? studyOverride.kidney3dData : (pdfStateRef.current?.kidney3dData || kidney3dData);
       const shouldIncludeKidney = studyOverride ? (studyOverride.includeKidney3dInReport !== false) : (pdfStateRef.current?.includeKidney3dInReport !== false && includeKidney3dInReport);
       if (activeKidneyData && shouldIncludeKidney && (activeKidneyData.panels?.length || activeKidneyData.findingTable?.length)) {
-        await renderKidney3DPageToPdf(doc, activeKidneyData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Rinon 3D", async () => {
+          await renderKidney3DPageToPdf(doc, activeKidneyData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeAbdomenData = studyOverride ? studyOverride.abdomen3dData : (pdfStateRef.current?.abdomen3dData || abdomen3dData);
       const shouldIncludeAbdomen = studyOverride ? (studyOverride.includeAbdomen3dInReport !== false) : (pdfStateRef.current?.includeAbdomen3dInReport !== false && includeAbdomen3dInReport);
       if (activeAbdomenData && shouldIncludeAbdomen && (activeAbdomenData.panels?.length || activeAbdomenData.findingTable?.length)) {
-        await renderAbdomen3DPageToPdf(doc, activeAbdomenData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Abdomen 3D", async () => {
+          await renderAbdomen3DPageToPdf(doc, activeAbdomenData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       // --- ANEXO: ELASTOGRAFIA & QUS (pagina dedicada, tras Suite Abdomen 3D) ---
@@ -2815,21 +2859,23 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
             general: "Hepatopatia Indeterminada / General",
           };
 
-          renderElastographyAnnexToPdf(doc, {
-            stiffnessKpa: elastoKpa,
-            capDbM: elastoCap,
-            fatFractionPercent: elastoFat,
-            etiology: elastoEtiologyLabels[elastoEtiology] || elastoEtiology,
-            fibrosisStage: elastoFibrosisStage,
-            steatosisGrade: elastoSteatosisGrade,
-            bavenoClassification: elastoBaveno,
-            histologicalCorrelation: elastoHisto,
-            velocityMs: elastoVelocity,
-            iqrKpa: elastoIqr,
-            iqrMedianRatioPercent: elastoIqrRatio,
-            image3dBase64: elastoImg3d,
-            originalImageBase64: elastoOriginalImg,
-          }, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter");
+          await trackAnnex("Elastografia y QUS", () => {
+            renderElastographyAnnexToPdf(doc, {
+              stiffnessKpa: elastoKpa,
+              capDbM: elastoCap,
+              fatFractionPercent: elastoFat,
+              etiology: elastoEtiologyLabels[elastoEtiology] || elastoEtiology,
+              fibrosisStage: elastoFibrosisStage,
+              steatosisGrade: elastoSteatosisGrade,
+              bavenoClassification: elastoBaveno,
+              histologicalCorrelation: elastoHisto,
+              velocityMs: elastoVelocity,
+              iqrKpa: elastoIqr,
+              iqrMedianRatioPercent: elastoIqrRatio,
+              image3dBase64: elastoImg3d,
+              originalImageBase64: elastoOriginalImg,
+            }, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter");
+          });
         }
       }
 
@@ -2837,30 +2883,38 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       const activeAbdominalWallData = studyOverride ? studyOverride.abdominalWall3dData : (pdfStateRef.current?.abdominalWall3dData || abdominalWall3dData);
       const shouldIncludeAbdominalWall = studyOverride ? (studyOverride.includeAbdominalWall3dInReport !== false) : (pdfStateRef.current?.includeAbdominalWall3dInReport !== false && includeAbdominalWall3dInReport);
       if (activeAbdominalWallData && shouldIncludeAbdominalWall && (activeAbdominalWallData.panels?.length || activeAbdominalWallData.findingTable?.length)) {
-        await renderAbdominalWall3DPageToPdf(doc, activeAbdominalWallData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Pared Abdominal 3D", async () => {
+          await renderAbdominalWall3DPageToPdf(doc, activeAbdominalWallData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
       const activeScrotumData = studyOverride ? studyOverride.scrotum3dData : (pdfStateRef.current?.scrotum3dData || scrotum3dData);
       const shouldIncludeScrotum = studyOverride ? (studyOverride.includeScrotum3dInReport !== false) : (pdfStateRef.current?.includeScrotum3dInReport !== false && includeScrotum3dInReport);
       if (activeScrotumData && shouldIncludeScrotum && (activeScrotumData.panels?.length || activeScrotumData.findingTable?.length)) {
-        await renderScrotum3DPageToPdf(doc, activeScrotumData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Escroto 3D", async () => {
+          await renderScrotum3DPageToPdf(doc, activeScrotumData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeMuscleTendonData = studyOverride ? studyOverride.muscleTendon3dData : (pdfStateRef.current?.muscleTendon3dData || muscleTendon3dData);
       const shouldIncludeMuscleTendon = studyOverride ? (studyOverride.includeMuscleTendon3dInReport !== false) : (pdfStateRef.current?.includeMuscleTendon3dInReport !== false && includeMuscleTendon3dInReport);
       if (activeMuscleTendonData && shouldIncludeMuscleTendon && (activeMuscleTendonData.panels?.length || activeMuscleTendonData.findingTable?.length)) {
-        await renderMuscleTendon3DPageToPdf(doc, activeMuscleTendonData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Musculo-Tendon 3D", async () => {
+          await renderMuscleTendon3DPageToPdf(doc, activeMuscleTendonData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       const activeWristData = studyOverride ? studyOverride.wrist3dData : (pdfStateRef.current?.wrist3dData || wrist3dData);
       const shouldIncludeWrist = studyOverride ? (studyOverride.includeWrist3dInReport !== false) : (pdfStateRef.current?.includeWrist3dInReport !== false && includeWrist3dInReport);
       if (activeWristData && shouldIncludeWrist && (activeWristData.panels?.length || activeWristData.findingTable?.length)) {
-        await renderWrist3DPageToPdf(doc, activeWristData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        await trackAnnex("Suite Muneca 3D", async () => {
+          await renderWrist3DPageToPdf(doc, activeWristData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+        });
       }
 
       if (anySuiteInPdf) {
         // Con suite: Pack justo después de la(s) suite(s); Corte Focal a continuación
         await renderDiagnosticPackAnnexHere();
-        renderFocalLesionAnnexHere();
+        await renderFocalLesionAnnexHere();
       }
 
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
@@ -2880,12 +2934,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       const activeAtlasData = studyOverride ? studyOverride.atlas3dData : (pdfStateRef.current?.atlas3dData || atlas3dData);
       const shouldIncludeAtlas = studyOverride ? (studyOverride.includeAtlas3dInReport !== false) : (pdfStateRef.current?.includeAtlas3dInReport !== false && includeAtlas3dInReport);
       if (activeAtlasData && shouldIncludeAtlas && activeAtlasData.panels && activeAtlasData.panels.length > 0) {
-        renderAtlas3DAnnexToPDF(doc, activeAtlasData, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor
+        await trackAnnex("Atlas 3D", () => {
+          renderAtlas3DAnnexToPDF(doc, activeAtlasData, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor
+          });
         });
       }
 
@@ -2895,12 +2951,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         ? (studyOverride as any).includeScorecardInReport === true
         : (pdfStateRef.current?.includeScorecardInReport ?? includeScorecardInReport) === true;
       if (activeScorecard && shouldIncludeScorecard && Array.isArray(activeScorecard.criteria) && activeScorecard.criteria.length > 0) {
-        renderScorecardAnnexToPDF(doc, activeScorecard, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor
+        await trackAnnex("Scorecard clinico", () => {
+          renderScorecardAnnexToPDF(doc, activeScorecard, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor
+          });
         });
       }
 
@@ -2917,12 +2975,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         Array.isArray(activeReasoningChain.nodes) &&
         activeReasoningChain.nodes.length > 0
       ) {
-        renderReasoningChainAnnexToPDF(doc, activeReasoningChain, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor,
+        await trackAnnex("Cadena de razonamiento", () => {
+          renderReasoningChainAnnexToPDF(doc, activeReasoningChain, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+          });
         });
       }
 
@@ -2940,12 +3000,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         Array.isArray(activeNegativityChecklist.items) &&
         activeNegativityChecklist.items.length > 0
       ) {
-        renderNegativityChecklistAnnexToPDF(doc, activeNegativityChecklist, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor,
+        await trackAnnex("Checklist de negatividad", () => {
+          renderNegativityChecklistAnnexToPDF(doc, activeNegativityChecklist, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+          });
         });
       }
 
@@ -2962,12 +3024,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         Array.isArray(activeDifferentialTree.branches) &&
         activeDifferentialTree.branches.length > 0
       ) {
-        renderDifferentialTreeAnnexToPDF(doc, activeDifferentialTree, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor,
+        await trackAnnex("Arbol de diferenciales", () => {
+          renderDifferentialTreeAnnexToPDF(doc, activeDifferentialTree, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+          });
         });
       }
 
@@ -2984,12 +3048,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         Array.isArray(activeSemioticsMatrix.rows) &&
         activeSemioticsMatrix.rows.length > 0
       ) {
-        renderSemioticsConductMatrixAnnexToPDF(doc, activeSemioticsMatrix, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor,
+        await trackAnnex("Matriz semiologia-conducta", () => {
+          renderSemioticsConductMatrixAnnexToPDF(doc, activeSemioticsMatrix, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+          });
         });
       }
 
@@ -3013,13 +3079,19 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         if (includePatient) audiences.push("patient");
         if (!audiences.length) audiences.push("clinician");
         for (const audience of audiences) {
-          await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
-            marginX,
-            pageWidth,
-            pageHeight,
-            contentWidth,
-            factor,
-            audience,
+          const infoTitle =
+            audience === "patient"
+              ? "Infografia de hallazgos (paciente)"
+              : "Infografia de hallazgos (clinico)";
+          await trackAnnex(infoTitle, async () => {
+            await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
+              marginX,
+              pageWidth,
+              pageHeight,
+              contentWidth,
+              factor,
+              audience,
+            });
           });
         }
       }
@@ -3054,18 +3126,20 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           ? focalPanels.find((p: any) => p?.imageUrl)
           : null;
         const focalUrl = focalPanel?.imageUrl || null;
-        await renderDominantLesionCardAnnexToPDF(doc, activeDominantCard, {
-          clinicName: pdfStateRef.current?.clinicName,
-          imageDataUrl: picked?.url || null,
-          imageCaption: picked
-            ? `${picked.modality ? `${picked.modality} · ` : ""}${picked.caption || ""}`.trim()
-            : null,
-          imageBDataUrl: pickedB?.url || null,
-          imageBCaption: pickedB
-            ? `${pickedB.modality ? `${pickedB.modality} · ` : ""}${pickedB.caption || ""}`.trim()
-            : null,
-          focal3dDataUrl: focalUrl || null,
-          focal3dCaption: focalPanel?.panelTitle || "Corte 3D",
+        await trackAnnex("Ficha de lesion dominante", async () => {
+          await renderDominantLesionCardAnnexToPDF(doc, activeDominantCard, {
+            clinicName: pdfStateRef.current?.clinicName,
+            imageDataUrl: picked?.url || null,
+            imageCaption: picked
+              ? `${picked.modality ? `${picked.modality} · ` : ""}${picked.caption || ""}`.trim()
+              : null,
+            imageBDataUrl: pickedB?.url || null,
+            imageBCaption: pickedB
+              ? `${pickedB.modality ? `${pickedB.modality} · ` : ""}${pickedB.caption || ""}`.trim()
+              : null,
+            focal3dDataUrl: focalUrl || null,
+            focal3dCaption: focalPanel?.panelTitle || "Corte 3D",
+          });
         });
       }
 
@@ -3085,13 +3159,15 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         Array.isArray(activeMeasurementGauges.measurements) &&
         activeMeasurementGauges.measurements.length > 0
       ) {
-        renderMeasurementsGaugeAnnexToPDF(doc, activeMeasurementGauges, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor,
-          includeNormals: includeNormalsInMeasurementPdf,
+        await trackAnnex("Mediciones cuantitativas", () => {
+          renderMeasurementsGaugeAnnexToPDF(doc, activeMeasurementGauges, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+            includeNormals: includeNormalsInMeasurementPdf,
+          });
         });
       }
 
@@ -3102,12 +3178,14 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       const activeUsPlaneData = studyOverride ? studyOverride.usPlaneSimulatorData : (pdfStateRef.current?.usPlaneSimulatorData || usPlaneSimulatorData);
       const shouldIncludeUsPlane = studyOverride ? (studyOverride.includeUsPlaneSimulatorInReport !== false) : (pdfStateRef.current?.includeUsPlaneSimulatorInReport !== false && includeUsPlaneSimulatorInReport);
       if (activeUsPlaneData && shouldIncludeUsPlane && activeUsPlaneData.panels && activeUsPlaneData.panels.length > 0) {
-        renderUsPlaneSimulatorAnnexToPDF(doc, activeUsPlaneData, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor
+        await trackAnnex("Bridge eco-anatomia 3D", () => {
+          renderUsPlaneSimulatorAnnexToPDF(doc, activeUsPlaneData, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor
+          });
         });
       }
 
@@ -3146,22 +3224,26 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
 
         // 6A. ANEXO DE IMÁGENES DE MAMOGRAFÍA (MMG) - FORMATO ELEGANTE DE REVISTA CIENTÍFICA
         if (sortedMmgImages.length > 0) {
-          globalFigIdx = renderMmgImagesToPdf(doc, sortedMmgImages, {
-            startFigIdx: globalFigIdx,
-            studyTitle: specificStudy || studyType || "MAMOGRAFÍA",
-            factor,
-            detectMetaFn: (name, meta) => detectImageMetaFromFilename(name, meta)
+          await trackAnnex("Capturas de mamografia", () => {
+            globalFigIdx = renderMmgImagesToPdf(doc, sortedMmgImages, {
+              startFigIdx: globalFigIdx,
+              studyTitle: specificStudy || studyType || "MAMOGRAFÍA",
+              factor,
+              detectMetaFn: (name, meta) => detectImageMetaFromFilename(name, meta)
+            });
           });
         }
 
         // 6B. ANEXO DE IMÁGENES Y CAPTURAS DE ULTRASONIDO (US) - FORMATO REVISTA CIENTÍFICA
         if (usImages.length > 0) {
           const activeGridMode = (studyOverride ? studyOverride.usImagesGridMode : (pdfStateRef.current?.usImagesGridMode || usImagesGridMode)) || "auto";
-          globalFigIdx = renderUsImagesToPdf(doc, usImages, {
-            gridMode: activeGridMode,
-            startFigIdx: globalFigIdx,
-            studyTitle: specificStudy || studyType || "ULTRASONIDO",
-            factor
+          await trackAnnex("Capturas de ultrasonido", () => {
+            globalFigIdx = renderUsImagesToPdf(doc, usImages, {
+              gridMode: activeGridMode,
+              startFigIdx: globalFigIdx,
+              studyTitle: specificStudy || studyType || "ULTRASONIDO",
+              factor
+            });
           });
         }
       }
@@ -5063,6 +5145,17 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           console.error("Error adding infographic to PDF:", err);
         }
       }
+
+      // Optional clickable annex index (inserted before first annex; shifts annex pages +1)
+      finalizeAnnexIndex(doc, {
+        enabled: shouldIncludeAnnexIndex,
+        insertAtPage: annexInsertAtPage,
+        entries: annexTracker.entries,
+        marginX,
+        pageWidth,
+        factor,
+        studyLabel: specificStudy || studyType || undefined,
+      });
 
       // Add running headers on pages 2+ and page numbers on all pages (Format Editorial)
       const totalPages = doc.getNumberOfPages();
