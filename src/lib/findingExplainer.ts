@@ -88,3 +88,38 @@ export function explainerCardsForPdf(
   if (!data?.cards?.length) return [];
   return data.cards.filter((c) => c && c.includeInReport !== false);
 }
+
+/** Assign (or clear) the US capture on one explainer card. */
+export function assignEcoToExplainerCard(
+  data: FindingExplainerData,
+  cardId: string,
+  eco: {
+    id?: string | null;
+    url?: string | null;
+    caption?: string | null;
+    label?: string | null;
+  } | null
+): FindingExplainerData {
+  return {
+    ...data,
+    cards: data.cards.map((c) => {
+      if (c.id !== cardId) return c;
+      if (!eco?.url) {
+        return {
+          ...c,
+          ecoImageUrl: null,
+          ecoImageId: null,
+          ecoCaption: null,
+        };
+      }
+      const caption =
+        String(eco.caption || eco.label || "").trim() || "Captura del estudio";
+      return {
+        ...c,
+        ecoImageUrl: eco.url,
+        ecoImageId: eco.id || null,
+        ecoCaption: caption,
+      };
+    }),
+  };
+}
