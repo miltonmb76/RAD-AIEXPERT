@@ -154,13 +154,15 @@ export function renderUsPlaneSimulatorAnnexToPDF(
   y += 6 * factor;
 
   // ── Columns: text LEFT · images RIGHT (US above, 3D below) ───────────────
-  const colGap = 10 * factor;
-  const imgColW = contentWidth * 0.42;
+  const colGap = 9 * factor;
+  // Slightly wider text column so wrapped lines are not clipped at the edge
+  const imgColW = contentWidth * 0.4;
   const textColW = contentWidth - imgColW - colGap;
   const textX = marginX;
   const imgX = marginX + textColW + colGap;
   const colsTop = y;
   const usableBottom = bottom - 14 * factor;
+  const textWrapW = Math.max(40 * factor, textColW - 2.5 * factor);
 
   const annotations = Array.isArray(data.imageAnnotations)
     ? data.imageAnnotations
@@ -187,14 +189,16 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     });
   }
   if (focal?.imageUrl) {
+    // Prefer short panel titles for captions — lesionTarget can be a long prose line
+    const shortCgiCap =
+      focal.panelTitle ||
+      focal.anatomicalFocus ||
+      data.targetStructure ||
+      "Mismo eje que la eco";
     imgSlots.push({
       url: focal.imageUrl,
       badge: "RECONSTRUCCIÓN 3D",
-      caption:
-        data.lesionTarget ||
-        focal.panelTitle ||
-        focal.anatomicalFocus ||
-        "Mismo eje que la eco",
+      caption: String(shortCgiCap),
       letter: focal.panelLetter || "A",
     });
   } else if (!realUs && validFallback[0]?.imageUrl) {
@@ -274,9 +278,24 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     doc.setFontSize(6.5 * factor);
     doc.setTextColor(100, 116, 139);
     const cap = sanitizePdfText(slot.caption);
-    const capLines = doc.splitTextToSize(cap, imgColW) as string[];
-    doc.text(capLines[0] || "", imgX, imgY + 2 * factor);
-    imgY += captionH;
+    // Prefer a short caption; long lesion prose wraps up to 2 lines with ellipsis
+    const capLines = (doc.splitTextToSize(cap, Math.max(30 * factor, boxW)) as string[]).slice(
+      0,
+      2
+    );
+    if (capLines.length) {
+      const more =
+        (doc.splitTextToSize(cap, Math.max(30 * factor, boxW)) as string[]).length >
+        capLines.length;
+      capLines.forEach((line, li) => {
+        const t =
+          more && li === capLines.length - 1 && line.length > 4
+            ? `${line.replace(/\s+\S*$/, "").trimEnd()}…`
+            : line;
+        doc.text(t, imgX, imgY + 2 * factor + li * 3.2 * factor);
+      });
+    }
+    imgY += captionH + (capLines.length > 1 ? 3.2 * factor : 0);
 
     // Connector between US and 3D — elegant stem + open chevron, label below
     if (i === 0 && imgSlots.length === 2) {
@@ -327,24 +346,46 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     }
   });
 
-  // ── Left text column (slightly larger type + airier section gaps) ─────────
+  // ── Left text column — wrap inside column; use height down to image bottom ─
   let textY = colsTop;
   const leftTitleSize = 8.5 * factor;
-  const leftBodySize = 10 * factor;
-  const leftLineH = 4.4 * factor;
-  const leftSectionGap = 7 * factor;
-  const writeLeft = (title: string, body: string, maxLines = 8) => {
-    const clean = sanitizePdfText(body || "").trim();
-    if (!clean || textY > usableBottom - 10 * factor) return;
+  const leftBodySize = 9.5 * factor;
+  const leftLineH = 4.15 * factor;
+  const leftSectionGap = 5.5 * factor;
+  // Prefer aligning with the image stack; never go past page usable bottom
+  const textFloor = Math.min(usableBottom, Math.max(colsTop + 40 * factor, imgY));
+
+  const ellipsisLast = (lines: string[], truncated: boolean) => {
+    if (!truncated || !lines.length) return lines;
+    const last = lines[lines.length - 1] || "";
+    const clipped =
+      last.length > 4 ? `${last.replace(/\s+\S*$/, "").trimEnd()}…` : `${last}…`;
+    return [...lines.slice(0, -1), clipped];
+  };
+
+  const roomLeft = () => textFloor - textY;
+
+  const writeSectionTitle = (title: string) => {
+    if (roomLeft() < 10 * factor) return false;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(leftTitleSize);
     doc.setTextColor(180, 83, 9);
     doc.text(title, textX, textY);
-    textY += 5.2 * factor;
+    textY += 5 * factor;
+    return true;
+  };
+
+  /** Paragraph wrapped to full text column width (no right-edge clip). */
+  const writeParagraph = (body: string, maxLines: number) => {
+    const clean = sanitizePdfText(body || "").trim();
+    if (!clean) return;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(leftBodySize);
     doc.setTextColor(41, 37, 36);
-    const lines = (doc.splitTextToSize(clean, textColW) as string[]).slice(0, maxLines);
+    const all = doc.splitTextToSize(clean, textWrapW) as string[];
+    const fitBySpace = Math.max(1, Math.floor(roomLeft() / leftLineH));
+    const n = Math.min(maxLines, fitBySpace, all.length);
+    const lines = ellipsisLast(all.slice(0, n), all.length > n);
     lines.forEach((line) => {
       doc.text(line, textX, textY);
       textY += leftLineH;
@@ -352,7 +393,38 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     textY += leftSectionGap;
   };
 
-  // Mini-ficha
+  /** Numbered list: each item wraps fully; never hard-cut mid-item by a global line cap. */
+  const writeNumberedList = (title: string, items: string[], maxItems: number) => {
+    const list = items.map((s) => sanitizePdfText(String(s || "")).trim()).filter(Boolean);
+    if (!list.length) return;
+    if (!writeSectionTitle(title)) return;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(leftBodySize);
+    doc.setTextColor(41, 37, 36);
+    const shown = list.slice(0, maxItems);
+    shown.forEach((item, i) => {
+      if (roomLeft() < leftLineH * 1.2) return;
+      const prefix = `${i + 1}. `;
+      const wrapped = doc.splitTextToSize(`${prefix}${item}`, textWrapW) as string[];
+      const fit = Math.max(1, Math.floor(roomLeft() / leftLineH));
+      const lines = ellipsisLast(wrapped.slice(0, fit), wrapped.length > fit);
+      lines.forEach((line) => {
+        doc.text(line, textX, textY);
+        textY += leftLineH;
+      });
+      textY += 1.2 * factor;
+    });
+    if (list.length > shown.length && roomLeft() > leftLineH) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7.5 * factor);
+      doc.setTextColor(120, 113, 108);
+      doc.text(`(+${list.length - shown.length} más)`, textX, textY);
+      textY += leftLineH;
+    }
+    textY += leftSectionGap - 1.2 * factor;
+  };
+
+  // Mini-ficha — values wrap inside the card (pad right so glyphs aren't clipped)
   const sheetRows = [
     data.planeLabelEs || data.acquisitionPlane
       ? { label: "Plano", value: String(data.planeLabelEs || data.acquisitionPlane) }
@@ -368,43 +440,45 @@ export function renderUsPlaneSimulatorAnnexToPDF(
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
-  if (sheetRows.length) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(leftTitleSize);
-    doc.setTextColor(180, 83, 9);
-    doc.text("MINI-FICHA DEL PLANO", textX, textY);
-    textY += 3.2 * factor;
-
-    const labelW = 20 * factor;
-    const valueW = Math.max(24 * factor, textColW - labelW - 6 * factor);
-    const sheetRowH = 4.8 * factor;
-    const sheetFont = 8.5 * factor;
+  if (sheetRows.length && writeSectionTitle("MINI-FICHA DEL PLANO")) {
+    textY -= 1.5 * factor; // tighter under section title before card
+    const labelW = 18 * factor;
+    const boxPadL = 3.5 * factor;
+    const boxPadR = 3.5 * factor;
+    const valueW = Math.max(22 * factor, textColW - boxPadL - labelW - boxPadR);
+    const sheetRowH = 4.4 * factor;
+    const sheetFont = 8.2 * factor;
+    const maxValueLines = 4;
     type SheetRow = { label: string; valueLines: string[] };
     const built: SheetRow[] = sheetRows.map((r) => {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(sheetFont);
+      const all = doc.splitTextToSize(sanitizePdfText(r.value), valueW) as string[];
       return {
         label: sanitizePdfText(r.label),
-        valueLines: doc.splitTextToSize(sanitizePdfText(r.value), valueW) as string[],
+        valueLines: ellipsisLast(
+          all.slice(0, maxValueLines),
+          all.length > maxValueLines
+        ),
       };
     });
     const sheetH =
       built.reduce((a, r) => a + Math.max(1, r.valueLines.length) * sheetRowH, 0) +
-      7.5 * factor;
+      6.5 * factor;
     doc.setFillColor(255, 251, 235);
     doc.setDrawColor(253, 186, 116);
     doc.setLineWidth(0.3);
     doc.roundedRect(textX, textY, textColW, sheetH, 1.5, 1.5, "FD");
-    let sy = textY + 5.8 * factor;
+    let sy = textY + 5.2 * factor;
     built.forEach((r) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(sheetFont);
       doc.setTextColor(120, 113, 108);
-      doc.text(`${r.label}:`, textX + 3.5 * factor, sy);
+      doc.text(`${r.label}:`, textX + boxPadL, sy);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(41, 37, 36);
       r.valueLines.forEach((line, li) => {
-        doc.text(line, textX + labelW, sy);
+        doc.text(line, textX + boxPadL + labelW, sy);
         if (li < r.valueLines.length - 1) sy += sheetRowH;
       });
       sy += sheetRowH;
@@ -412,24 +486,18 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     textY += sheetH + leftSectionGap;
   }
 
-  writeLeft("SÍNTESIS DEL PLANO", data.planeSummary || "", 6);
+  if (data.planeSummary && writeSectionTitle("SÍNTESIS DEL PLANO")) {
+    writeParagraph(data.planeSummary, 8);
+  }
 
   const crossed = (data.structuresCrossed || []).filter(Boolean);
   if (crossed.length) {
-    writeLeft(
-      "ESTRUCTURAS CRUZADAS",
-      crossed.map((s, i) => `${i + 1}. ${s}`).join("\n"),
-      6
-    );
+    writeNumberedList("ESTRUCTURAS CRUZADAS", crossed.map(String), 6);
   }
 
   const keys = (data.keyPoints || []).filter(Boolean);
   if (keys.length) {
-    writeLeft(
-      "PUNTOS CLAVE",
-      keys.map((k, i) => `${i + 1}. ${k}`).join("\n"),
-      5
-    );
+    writeNumberedList("PUNTOS CLAVE", keys.map(String), 6);
   }
 
   const context =
@@ -439,8 +507,10 @@ export function renderUsPlaneSimulatorAnnexToPDF(
           plane: data,
           lesionTarget: data.lesionTarget,
         });
-  if (context.length && textY < usableBottom - 12 * factor) {
-    writeLeft("NOTA CLÍNICA", context.slice(0, 3).join("\n\n"), 5);
+  if (context.length && roomLeft() > 16 * factor) {
+    if (writeSectionTitle("NOTA CLÍNICA")) {
+      writeParagraph(context.slice(0, 3).join("\n\n"), 5);
+    }
   }
 
   // Footer note
