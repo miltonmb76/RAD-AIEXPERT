@@ -306,7 +306,7 @@ export const FindingExplainerModule: React.FC<Props> = ({
                       )}
                     </div>
                     {card.ecoCaption && (
-                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 truncate">
+                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 leading-snug">
                         {card.ecoCaption}
                       </figcaption>
                     )}
@@ -373,9 +373,9 @@ export const FindingExplainerModule: React.FC<Props> = ({
                         </span>
                       )}
                     </div>
-                    {card.cgiCaption && (
-                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 truncate">
-                        {card.cgiCaption}
+                    {(card.cgiCaption || card.label) && (
+                      <figcaption className="text-[10px] text-stone-500 italic pt-1.5 leading-snug">
+                        {card.cgiCaption || card.label}
                       </figcaption>
                     )}
                   </figure>

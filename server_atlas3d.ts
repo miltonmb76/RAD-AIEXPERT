@@ -8509,8 +8509,21 @@ Reglas:
             whereIs,
             implies,
             ecoImageUrl: eco?.url || null,
+            // Short rotulo: gallery label or finding name — avoid long prose that clips
             ecoCaption: eco
-              ? String(eco.caption || eco.label || "Captura del estudio")
+              ? (() => {
+                  const galLabel = String(eco.label || "").replace(/\s+/g, " ").trim();
+                  const galCap = String(eco.caption || "").replace(/\s+/g, " ").trim();
+                  const max = 42;
+                  if (galLabel && galLabel.length <= max) return galLabel;
+                  if (label && label.length <= max) return label;
+                  if (galCap && galCap.length <= max) return galCap;
+                  if (label) return label.length <= max ? label : `${label.slice(0, max - 1).trimEnd()}…`;
+                  const clause = (galCap.split(/[.;:—–\n]/)[0] || galCap).trim();
+                  return clause.length <= max
+                    ? clause || "Captura del estudio"
+                    : `${clause.slice(0, max - 1).trimEnd()}…`;
+                })()
               : null,
             ecoImageId: eco?.id || null,
             cgiImageUrl: cgiImageUrl || null,

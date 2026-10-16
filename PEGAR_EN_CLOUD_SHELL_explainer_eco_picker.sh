@@ -31,6 +31,8 @@ grep -q 'Cambiar eco' src/components/FindingExplainerModule.tsx \
   || { echo "ERROR: falta boton Cambiar eco. Aborto."; exit 1; }
 grep -q 'pickingEcoFor' src/components/FindingExplainerModule.tsx \
   || { echo "ERROR: falta picker por ficha. Aborto."; exit 1; }
+grep -q 'shortExplainerRotulo' src/lib/findingExplainer.ts \
+  || { echo "ERROR: falta rotulo corto. Aborto."; exit 1; }
 
 SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
 if gcloud secrets describe openai-api-key >/dev/null 2>&1; then

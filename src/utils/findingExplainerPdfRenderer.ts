@@ -1,5 +1,8 @@
 import type { FindingExplainerData } from "../lib/findingExplainer";
-import { explainerCardsForPdf } from "../lib/findingExplainer";
+import {
+  explainerCardsForPdf,
+  shortExplainerRotulo,
+} from "../lib/findingExplainer";
 import { sanitizePdfText } from "./sanitizePdfText";
 
 function imageRatio(doc: any, dataUrl: string, fallback = 4 / 3): number {
@@ -284,14 +287,22 @@ export async function renderFindingExplainerAnnexToPDF(
       "ECO REAL",
       p.eco,
       p.ecoRatio,
-      p.card.ecoCaption || "Captura del estudio"
+      shortExplainerRotulo({
+        findingLabel: p.card.label,
+        galleryCaption: p.card.ecoCaption,
+        fallback: p.card.label || "Captura del estudio",
+      })
     );
     const yCgi = drawSlot(
       marginX + imgColW + gap,
       "CGI 3D",
       p.cgi,
       p.cgiRatio,
-      p.card.cgiCaption || p.card.label
+      shortExplainerRotulo({
+        findingLabel: p.card.label,
+        galleryCaption: p.card.cgiCaption,
+        fallback: p.card.label,
+      })
     );
     cy = Math.max(yEco, yCgi) + 3.5 * factor;
 
