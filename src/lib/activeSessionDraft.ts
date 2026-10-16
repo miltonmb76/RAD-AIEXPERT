@@ -345,16 +345,33 @@ function openAnnexDb(): Promise<IDBDatabase> {
   });
 }
 
+/** Drop oversized elastography bitmaps before IDB put (prevents UI freeze on open). */
+function sanitizeAnnexImagesForIdb<T extends Omit<ActiveSessionAnnexBundle, "v" | "savedAt">>(
+  partial: T
+): T {
+  const MAX = 1_800_000; // ~1.8MB chars — enough for preview, safe for IDB
+  const trim = (s: string | null | undefined) => {
+    if (!s) return null;
+    return s.length > MAX ? null : s;
+  };
+  return {
+    ...partial,
+    elastographyImage3d: trim(partial.elastographyImage3d as any) as any,
+    elastographyOriginalImage: trim(partial.elastographyOriginalImage as any) as any,
+  };
+}
+
 export async function saveActiveSessionAnnexBundle(
   partial: Omit<ActiveSessionAnnexBundle, "v" | "savedAt">
 ): Promise<boolean> {
-  if (!annexBundleHasContent(partial)) return false;
+  const safe = sanitizeAnnexImagesForIdb(partial);
+  if (!annexBundleHasContent(safe)) return false;
   const payload: ActiveSessionAnnexBundle & { id: string } = {
     id: ANNEX_KEY,
     v: 1,
     savedAt: new Date().toISOString(),
-    ...partial,
-    reportFingerprint: partial.reportFingerprint || "",
+    ...safe,
+    reportFingerprint: safe.reportFingerprint || "",
   };
   try {
     const db = await openAnnexDb();
@@ -375,7 +392,7 @@ export async function saveActiveSessionAnnexBundle(
     // Retry once without the heaviest image arrays if quota-ish failure
     try {
       const slim = {
-        ...partial,
+        ...safe,
         attachedImages: [],
         findings3dRenders: [],
         elastographyImage3d: null,
