@@ -31,9 +31,22 @@ function drawImage(
   }
 }
 
+type PdfCard = ReturnType<typeof explainerCardsForPdf>[number];
+
+type PreparedCard = {
+  card: PdfCard;
+  eco: string | null;
+  cgi: string | null;
+  ecoRatio: number;
+  cgiRatio: number;
+  labelLines: string[];
+  labelSize: number;
+  siteLine: string;
+};
+
 /**
- * Annex — stacked finding explainers (~2 per page when they fit):
- * Pack-style titles, eco | CGI at natural aspect (full height, snug frame), bullets.
+ * Annex — exactly 2 findings per page when possible.
+ * Pack-style titles; eco/CGI scaled uniformly (aspect preserved, no stretch/crop).
  */
 export async function renderFindingExplainerAnnexToPDF(
   doc: any,
@@ -54,10 +67,9 @@ export async function renderFindingExplainerAnnexToPDF(
   const cardsPerPage = 2;
 
   doc.addPage();
-  // Clear of running header rule (~15.5)
   let y = 20 * factor;
 
-  // ── Pack-style annex header band ──────────────────────────────────────
+  // ── Pack-style annex header band (page 1 only) ────────────────────────
   const rawTitle = sanitizePdfText(data?.title || "EXPLAINER DE HALLAZGOS");
   const titleLeft = rawTitle.toUpperCase().startsWith("ANEXO")
     ? rawTitle
@@ -76,9 +88,9 @@ export async function renderFindingExplainerAnnexToPDF(
     ? (doc.splitTextToSize(metaRaw, metaMaxW) as string[]).slice(0, 2)
     : [];
 
-  const headerPadY = 3.6 * factor;
-  const titleLineH = 4.6 * factor;
-  const metaLineH = 3.6 * factor;
+  const headerPadY = 3.4 * factor;
+  const titleLineH = 4.4 * factor;
+  const metaLineH = 3.5 * factor;
   const headerInnerH = Math.max(
     titleLineH,
     metaLines.length ? metaLines.length * metaLineH : 0
@@ -88,7 +100,7 @@ export async function renderFindingExplainerAnnexToPDF(
   doc.setFillColor(41, 37, 36);
   doc.roundedRect(marginX, y, contentWidth, annexHeaderH, 1.5, 1.5, "F");
   doc.setFillColor(217, 119, 6);
-  doc.rect(marginX, y + annexHeaderH, contentWidth, 1.2 * factor, "F");
+  doc.rect(marginX, y + annexHeaderH, contentWidth, 1.15 * factor, "F");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10 * factor);
@@ -109,18 +121,19 @@ export async function renderFindingExplainerAnnexToPDF(
     });
   }
 
-  y += annexHeaderH + 1.2 * factor + 8 * factor;
+  y += annexHeaderH + 1.15 * factor + 6.5 * factor;
+  const page1CardsTop = y;
 
   const gap = 5 * factor;
   const imgColW = (contentWidth - gap) / 2;
   const bulletColW = contentWidth;
-  const framePad = 1.2 * factor;
+  const framePad = 1.1 * factor;
   const maxInnerW = imgColW - framePad * 2;
-  const badgeH = 4 * factor;
-  const captionH = 5 * factor;
+  const badgeH = 3.6 * factor;
+  const captionH = 4.6 * factor;
 
-  for (let i = 0; i < cards.length; i++) {
-    const card = cards[i];
+  // Prepare cards (ratios + wrapped titles) once
+  const prepared: PreparedCard[] = cards.map((card) => {
     const eco =
       card.ecoImageUrl && String(card.ecoImageUrl).startsWith("data:")
         ? card.ecoImageUrl
@@ -129,83 +142,112 @@ export async function renderFindingExplainerAnnexToPDF(
       card.cgiImageUrl && String(card.cgiImageUrl).startsWith("data:")
         ? card.cgiImageUrl
         : null;
-
-    // Natural height from aspect — full width, no crop / no letterbox
-    const ecoRatio = eco ? imageRatio(doc, eco) : 4 / 3;
-    const cgiRatio = cgi ? imageRatio(doc, cgi) : 4 / 3;
-    const ecoH = maxInnerW / ecoRatio;
-    const cgiH = maxInnerW / cgiRatio;
-    const imgBlockH = Math.max(ecoH, cgiH, 28 * factor) + framePad * 2;
-
-    // Estimate card height for page-break (2 per page when they fit)
-    const titleBlockEst = 18 * factor;
-    const textBlockEst = 38 * factor;
-    const need =
-      titleBlockEst + badgeH + imgBlockH + captionH + textBlockEst + 10 * factor;
-
-    const isPageStart = i > 0 && i % cardsPerPage === 0;
-    if (isPageStart || (i > 0 && y + need > bottom)) {
-      doc.addPage();
-      y = 20 * factor;
-    }
-
-    // ── Pack-style finding title (eyebrow + large name + amber rule) ──
+    const label = sanitizePdfText(card.label || "Hallazgo");
+    let labelSize = label.length > 70 ? 11.5 : label.length > 45 ? 12.5 : 13.5;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8 * factor);
-    doc.setTextColor(180, 83, 9);
-    doc.text(`HALLAZGO ${i + 1}`, marginX, y);
-    y += 5.5 * factor;
-
-    const label = sanitizePdfText(card.label || `Hallazgo ${i + 1}`);
-    doc.setFont("helvetica", "bold");
-    let labelSize = label.length > 70 ? 12 : label.length > 45 ? 13 : 14.5;
     doc.setFontSize(labelSize * factor);
     let labelLines = doc.splitTextToSize(label, contentWidth) as string[];
-    if (labelLines.length > 2 && labelSize > 12) {
-      labelSize = 12;
+    if (labelLines.length > 2) {
+      labelSize = 11.5;
       doc.setFontSize(labelSize * factor);
-      labelLines = doc.splitTextToSize(label, contentWidth) as string[];
+      labelLines = (doc.splitTextToSize(label, contentWidth) as string[]).slice(0, 2);
+    } else {
+      labelLines = labelLines.slice(0, 2);
     }
-    const labelLineH = labelSize * 0.42 + 1.2;
-    doc.setTextColor(28, 25, 23);
-    labelLines.slice(0, 2).forEach((line) => {
-      doc.text(line, marginX, y);
-      y += labelLineH * factor;
-    });
-    y += 1.5 * factor;
+    const siteLine = card.site
+      ? ((doc.setFont("helvetica", "normal"),
+        doc.setFontSize(8 * factor),
+        doc.splitTextToSize(sanitizePdfText(card.site), contentWidth) as string[])[0] || "")
+      : "";
+    return {
+      card,
+      eco,
+      cgi,
+      ecoRatio: eco ? imageRatio(doc, eco) : 4 / 3,
+      cgiRatio: cgi ? imageRatio(doc, cgi) : 4 / 3,
+      labelLines,
+      labelSize,
+      siteLine,
+    };
+  });
 
-    if (card.site) {
+  const measureTitleChrome = (p: PreparedCard) => {
+    const labelLineH = (p.labelSize * 0.42 + 1.15) * factor;
+    return (
+      5 * factor + // HALLAZGO N
+      p.labelLines.length * labelLineH +
+      1.2 * factor +
+      (p.siteLine ? 4 * factor : 0) +
+      5.5 * factor // amber rule + gap
+    );
+  };
+
+  const measureTextChrome = () => {
+    // Fixed budget for 3 bullets (compact but still readable)
+    // QUE ES: label + 2 lines; DONDE: label + 2; IMPLICA: label + 3
+    const lineH = 3.5 * factor;
+    const labelGap = 4 * factor;
+    const after = 2.4 * factor;
+    return (
+      labelGap + 2 * lineH + after +
+      labelGap + 2 * lineH + after +
+      labelGap + 3 * lineH + after
+    );
+  };
+
+  const naturalImgRowH = (p: PreparedCard, innerW: number) => {
+    const ecoH = innerW / p.ecoRatio;
+    const cgiH = innerW / p.cgiRatio;
+    return badgeH + Math.max(ecoH, cgiH) + framePad * 2 + captionH;
+  };
+
+  const drawCard = (p: PreparedCard, index: number, innerW: number, startY: number) => {
+    let cy = startY;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5 * factor);
+    doc.setTextColor(180, 83, 9);
+    doc.text(`HALLAZGO ${index + 1}`, marginX, cy);
+    cy += 5 * factor;
+
+    const labelLineH = (p.labelSize * 0.42 + 1.15) * factor;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(p.labelSize * factor);
+    doc.setTextColor(28, 25, 23);
+    p.labelLines.forEach((line) => {
+      doc.text(line, marginX, cy);
+      cy += labelLineH;
+    });
+    cy += 1.2 * factor;
+
+    if (p.siteLine) {
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5 * factor);
+      doc.setFontSize(8 * factor);
       doc.setTextColor(120, 113, 108);
-      const siteLines = doc.splitTextToSize(
-        sanitizePdfText(card.site),
-        contentWidth
-      ) as string[];
-      doc.text(siteLines[0] || "", marginX, y);
-      y += 4.5 * factor;
+      doc.text(p.siteLine, marginX, cy);
+      cy += 4 * factor;
     }
 
     doc.setDrawColor(251, 191, 36);
     doc.setLineWidth(0.5);
-    doc.line(marginX, y, marginX + 36 * factor, y);
-    y += 6.5 * factor;
+    doc.line(marginX, cy, marginX + 36 * factor, cy);
+    cy += 5.5 * factor;
 
     const drawSlot = (
       x: number,
       badge: string,
       url: string | null,
-      naturalH: number,
+      ratio: number,
       caption: string
     ) => {
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5 * factor);
+      doc.setFontSize(7.2 * factor);
       doc.setTextColor(180, 83, 9);
-      doc.text(badge, x, y + 2.4 * factor);
+      doc.text(badge, x, cy + 2.2 * factor);
 
-      const boxY = y + badgeH;
-      const drawW = maxInnerW;
-      const drawH = naturalH;
+      const boxY = cy + badgeH;
+      const drawW = innerW;
+      const drawH = drawW / ratio; // aspect preserved — never stretch
       const boxW = drawW + framePad * 2;
       const boxH = drawH + framePad * 2;
 
@@ -224,66 +266,93 @@ export async function renderFindingExplainerAnnexToPDF(
       }
 
       doc.setFont("helvetica", "italic");
-      doc.setFontSize(6.5 * factor);
+      doc.setFontSize(6.3 * factor);
       doc.setTextColor(100, 116, 139);
       const cap = sanitizePdfText(caption || "");
       const capLines = doc.splitTextToSize(cap, boxW) as string[];
-      doc.text(capLines[0] || "", x, boxY + boxH + 3.2 * factor);
+      doc.text(capLines[0] || "", x, boxY + boxH + 3 * factor);
       return boxY + boxH + captionH;
     };
 
     const yEco = drawSlot(
       marginX,
       "ECO REAL",
-      eco,
-      ecoH,
-      card.ecoCaption || "Captura del estudio"
+      p.eco,
+      p.ecoRatio,
+      p.card.ecoCaption || "Captura del estudio"
     );
     const yCgi = drawSlot(
       marginX + imgColW + gap,
       "CGI 3D",
-      cgi,
-      cgiH,
-      card.cgiCaption || card.label
+      p.cgi,
+      p.cgiRatio,
+      p.card.cgiCaption || p.card.label
     );
-    y = Math.max(yEco, yCgi) + 5 * factor;
+    cy = Math.max(yEco, yCgi) + 3.5 * factor;
 
-    // Three bullets — Pack-style amber section labels, more air
     const bullets = [
-      { k: "Que es", v: card.whatIs, maxLines: 3 },
-      { k: "Donde", v: card.whereIs, maxLines: 2 },
-      { k: "Que implica", v: card.implies, maxLines: 4 },
+      { k: "Que es", v: p.card.whatIs, maxLines: 2 },
+      { k: "Donde", v: p.card.whereIs, maxLines: 2 },
+      { k: "Que implica", v: p.card.implies, maxLines: 3 },
     ].filter((b) => String(b.v || "").trim());
 
-    const lineH = 3.8 * factor;
+    const lineH = 3.5 * factor;
     bullets.forEach((b) => {
-      if (y > bottom - 10 * factor) {
-        doc.addPage();
-        y = 20 * factor;
-      }
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8 * factor);
+      doc.setFontSize(7.5 * factor);
       doc.setTextColor(180, 83, 9);
-      doc.text(b.k.toUpperCase(), marginX, y);
-      y += 4.5 * factor;
+      doc.text(b.k.toUpperCase(), marginX, cy);
+      cy += 4 * factor;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9 * factor);
+      doc.setFontSize(8.5 * factor);
       doc.setTextColor(41, 37, 36);
       const lines = doc.splitTextToSize(sanitizePdfText(b.v), bulletColW) as string[];
       lines.slice(0, b.maxLines).forEach((line) => {
-        doc.text(line, marginX, y);
-        y += lineH;
+        doc.text(line, marginX, cy);
+        cy += lineH;
       });
-      y += 3.2 * factor;
+      cy += 2.4 * factor;
     });
 
-    // Separator + air between the two cards on the same page
-    if (i < cards.length - 1 && (i + 1) % cardsPerPage !== 0) {
-      y += 3 * factor;
-      doc.setDrawColor(231, 229, 228);
-      doc.setLineWidth(0.35);
-      doc.line(marginX, y, pageWidth - marginX, y);
-      y += 7 * factor;
+    return cy;
+  };
+
+  // Render in pages of exactly 2 (last page may have 1)
+  for (let pageStart = 0; pageStart < prepared.length; pageStart += cardsPerPage) {
+    const pageCards = prepared.slice(pageStart, pageStart + cardsPerPage);
+    const isFirstPage = pageStart === 0;
+
+    if (!isFirstPage) {
+      doc.addPage();
+      y = 20 * factor;
+    } else {
+      y = page1CardsTop;
     }
+
+    const avail = Math.max(40 * factor, bottom - y);
+    const sepH = pageCards.length > 1 ? 8 * factor : 0;
+    const titleChrome = pageCards.reduce((a, p) => a + measureTitleChrome(p), 0);
+    const textChrome = pageCards.length * measureTextChrome();
+    const fixed = titleChrome + textChrome + sepH;
+    const imgBudget = Math.max(36 * factor, avail - fixed);
+
+    const naturalRows = pageCards.map((p) => naturalImgRowH(p, maxInnerW));
+    const naturalSum = naturalRows.reduce((a, b) => a + b, 0) || 1;
+    // Uniform scale of WIDTH (height follows aspect) — no distortion
+    const scale = Math.min(1, imgBudget / naturalSum);
+    const innerW = Math.max(28 * factor, maxInnerW * scale);
+
+    pageCards.forEach((p, localIdx) => {
+      const globalIdx = pageStart + localIdx;
+      y = drawCard(p, globalIdx, innerW, y);
+
+      if (localIdx < pageCards.length - 1) {
+        y += 2.5 * factor;
+        doc.setDrawColor(231, 229, 228);
+        doc.setLineWidth(0.35);
+        doc.line(marginX, y, pageWidth - marginX, y);
+        y += 5.5 * factor;
+      }
+    });
   }
 }
