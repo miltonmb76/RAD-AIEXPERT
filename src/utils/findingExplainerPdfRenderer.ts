@@ -58,12 +58,10 @@ export async function renderFindingExplainerAnnexToPDF(
   let y = 20 * factor;
 
   // ── Pack-style annex header band ──────────────────────────────────────
-  const titleLeft = (() => {
-    const raw = sanitizePdfText(data?.title || "EXPLAINER DE HALLAZGOS");
-    return raw.toUpperCase().startsWith("ANEXO")
-      ? raw
-      : `ANEXO: ${raw.toUpperCase().startsWith("EXPLAINER") ? raw : `EXPLAINER DE HALLAZGOS`}`;
-  })();
+  const rawTitle = sanitizePdfText(data?.title || "EXPLAINER DE HALLAZGOS");
+  const titleLeft = rawTitle.toUpperCase().startsWith("ANEXO")
+    ? rawTitle
+    : `ANEXO: ${rawTitle}`;
   const metaRaw = data?.studyRegion
     ? sanitizePdfText(String(data.studyRegion))
     : "";

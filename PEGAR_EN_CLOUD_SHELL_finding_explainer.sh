@@ -37,10 +37,12 @@ grep -q 'Explainer de hallazgos' src/App.tsx \
   || { echo "ERROR: falta boton Explainer en UI. Aborto."; exit 1; }
 grep -q 'finding_explainer' src/lib/modelRouting.ts \
   || { echo "ERROR: falta task finding_explainer. Aborto."; exit 1; }
-grep -q 'coverCropDataUrl' src/utils/findingExplainerPdfRenderer.ts \
-  || { echo "ERROR: falta coverCrop (imagen a borde, sin bandas). Aborto."; exit 1; }
 grep -q 'cardsPerPage' src/utils/findingExplainerPdfRenderer.ts \
   || { echo "ERROR: falta layout 2 hallazgos/pagina. Aborto."; exit 1; }
+grep -q 'HALLAZGO' src/utils/findingExplainerPdfRenderer.ts \
+  || { echo "ERROR: falta titulo estilo Pack. Aborto."; exit 1; }
+grep -q 'imageRatio' src/utils/findingExplainerPdfRenderer.ts \
+  || { echo "ERROR: falta altura natural (sin crop). Aborto."; exit 1; }
 grep -q 'PROHIBIDO recomendaciones' server_atlas3d.ts \
   || { echo "ERROR: falta regla implies sin manejo. Aborto."; exit 1; }
 
