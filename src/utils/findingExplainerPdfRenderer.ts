@@ -154,11 +154,16 @@ export async function renderFindingExplainerAnnexToPDF(
     } else {
       labelLines = labelLines.slice(0, 2);
     }
-    const siteLine = card.site
-      ? ((doc.setFont("helvetica", "normal"),
-        doc.setFontSize(8 * factor),
-        doc.splitTextToSize(sanitizePdfText(card.site), contentWidth) as string[])[0] || "")
-      : "";
+    let siteLine = "";
+    if (card.site) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8 * factor);
+      const siteLines = doc.splitTextToSize(
+        sanitizePdfText(card.site),
+        contentWidth
+      ) as string[];
+      siteLine = siteLines[0] || "";
+    }
     return {
       card,
       eco,
