@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import { resolveFocalPlanePair } from "./src/lib/focalPlanePair";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -1558,16 +1559,32 @@ const BRIDGE_US_REFERENCE_GUIDE =
   "STRICTLY FORBIDDEN in the output: ultrasound B-mode look, scan-line grain, sector/convex probe footprint as the image style, " +
   "gain artifacts, copying or pasting the photo, desaturated US texture. Do NOT degrade CGI quality to resemble ultrasound.";
 
+/**
+ * Focal dual-plane: prior CGI panel is the geometric/identity anchor for the orthogonal view.
+ * Match the SAME lesion; change only camera/plane.
+ */
+const CGI_SIBLING_REFERENCE_GUIDE =
+  "REFERENCE CGI PANEL (SAME LESION — orthogonal camera):\n" +
+  "- This image shows the TARGET lesion in another anatomic plane of the SAME case.\n" +
+  "- Match lesion IDENTITY exactly: morphology, relative size, tissue character, site, laterality, and relationship to landmarks.\n" +
+  "- Change ONLY the camera to the requested orthogonal plane (e.g. coronal→sagittal or AP→LAT). Do NOT copy the same viewpoint.\n" +
+  "- Do NOT invent a different lesion, satellite foci, or mirrored laterality.\n" +
+  "- Keep premium photorealistic medical CGI / anatomic cutaway (never ultrasound B-mode style).";
+
 export function registerAtlas3DRoutes(app: express.Express) {
   // Helper to generate a medical image using gemini-3.1-flash-image-preview or imagen-3.0
   async function generateMedicalImage(
     ai: any,
     prompt: string,
-    opts?: { referenceImageUrl?: string | null }
+    opts?: { referenceImageUrl?: string | null; referenceKind?: "us" | "cgi_sibling" }
   ): Promise<string> {
     // Central choke-point: every suite / atlas / vascular / focal render gets clean-PNG rules.
     const reinforcedPrompt = reinforceCleanRenderPrompt(prompt);
     const ref = opts?.referenceImageUrl ? stripDataUrl(opts.referenceImageUrl) : null;
+    const refGuide =
+      opts?.referenceKind === "cgi_sibling"
+        ? CGI_SIBLING_REFERENCE_GUIDE
+        : BRIDGE_US_REFERENCE_GUIDE;
 
     const extractB64 = (response: any): string => {
       let base64Image = "";
@@ -1597,20 +1614,20 @@ export function registerAtlas3DRoutes(app: express.Express) {
       return `data:image/jpeg;base64,${base64Image}`;
     };
 
-    // Prefer multimodal reference when available (Bridge US→3D fidelity).
+    // Prefer multimodal reference when available (Bridge US→3D or Focal A→B).
     if (ref) {
       try {
         return await runFlashImage({
           parts: [
             {
-              text: `${BRIDGE_US_REFERENCE_GUIDE}\n\n${reinforcedPrompt}`,
+              text: `${refGuide}\n\n${reinforcedPrompt}`,
             },
             { inlineData: { mimeType: ref.mime, data: ref.data } },
           ],
         });
       } catch (refErr: any) {
         console.warn(
-          "generateMedicalImage: referencia US falló; reintento solo texto:",
+          "generateMedicalImage: referencia multimodal falló; reintento solo texto:",
           refErr?.message || refErr
         );
       }
@@ -7258,12 +7275,17 @@ app.post("/api/generate-focal-lesion-3d", async (req: express.Request, res: expr
 
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
-      const wantMacro = includeMacroPanel !== false;
+      const wantDualPlane = includeMacroPanel !== false;
+      const planePair = resolveFocalPlanePair({
+        organOrStudy: String(organOrStudy || ""),
+        reportText: String(reportText || ""),
+        focusText: mode === "manual" ? String(focusText || "") : "",
+      });
       const focusInstruction = mode === "manual"
         ? `MODO MANUAL: la lesión/foco a reconstruir es exactamente: "${String(focusText).trim()}". Ignora otras lesiones salvo como contexto anatómico mínimo.`
         : `MODO AUTO: identifica la LESIÓN DOMINANTE del informe (la de mayor relevancia diagnóstica). Si hay empate, prioriza la más específica/medible.`;
 
-      const promptPlan = `Eres un Radiólogo y Anatomista Quirúrgico. Planifica un CORTE FOCAL 3D de UNA lesión (no un atlas regional completo).
+      const promptPlan = `Eres un Radiólogo y Anatomista Quirúrgico. Planifica un CORTE FOCAL 3D de UNA lesión en ${wantDualPlane ? "DOS PLANOS ORTOGONALES COHERENTES" : "UN PLANO"} (no un atlas regional completo).
 
 ========================================================================
 DATOS:
@@ -7271,6 +7293,9 @@ DATOS:
 - Región / Protocolo: "${organOrStudy || "Estudio General"}"
 - Lateralidad: "${laterality || "Detectar del texto"}"
 - Directiva clínica (Scorecard / médico): "${customDirectives || "Ninguna"}"
+- PAR DE PLANOS OBLIGATORIO: ${planePair.rationaleEs}
+  · Panel A view EXACTO: "${planePair.a.view}" (título: "${planePair.a.titleEs}")
+  ${wantDualPlane ? `· Panel B view EXACTO: "${planePair.b.view}" (título: "${planePair.b.titleEs}")` : "· Solo Panel A."}
 - ${focusInstruction}
 - INFORME:
 """
@@ -7281,17 +7306,18 @@ ${reportText}
 TAREA:
 ========================================================================
 1. Define la lesión objetivo (label, sitio exacto, morfología, tamaño si consta, relaciones).
-2. Diseña ${wantMacro ? "2 paneles" : "1 panel"}:
-   - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (corte anatómico).
-   - En panelTitle y textos clínicos del anexo usa siempre «Corte» (nunca Cutaway/CUTAWAY).
-   ${wantMacro ? "- Panel B = MACRO / ZOOM corte de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
-3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
+2. Diseña ${wantDualPlane ? "2 paneles de la MISMA lesión" : "1 panel"}:
+   - Panel A = ${planePair.a.titleEs}: lesión anclada en ese plano.
+   - En panelTitle usa «${planePair.a.titleEs}» (o «Corte» + plano). Nunca Cutaway/CUTAWAY.
+   ${wantDualPlane ? `- Panel B = ${planePair.b.titleEs}: la MISMA lesión vista a ~90° (mismo sitio, morfología y lateralidad; solo cambia la cámara).` : ""}
+3. Cada panel DEBE incluir spatialContract (view OBLIGATORIO según el par, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
 3b. ${LATERALITY_PLAN_RULES_ES}
 3b2. ${BREAST_CLOCK_PLAN_RULES_ES}
 3c. ${FOCAL_CLINICAL_PROSE_RULES_ES}
-   Si el foco es unilateral, pathologySite debe nombrar el lado correcto en ambos paneles (contexto y macro).
+   Si el foco es unilateral, pathologySite debe nombrar el lado correcto en ambos planos.
+3d. COHERENCIA: pathologySite y pathologyAppearance deben ser IDÉNTICOS (o equivalentes) en A y B — misma lesión, no dos interpretaciones.
 4. NO inventes hallazgos. Si el informe es normal y no hay foco manual, responde lesionFound=false.
-5. Estilo: fotorrealismo clínico premium (igual o superior al Atlas 3D); SIN bioluminiscencia.
+5. Estilo: fotorrealismo clínico premium (igual o superior al Atlas 3D); SIN bioluminiscencia; SIN fotogramas de ultrasonido.
 6. lesionSummary, lesionMorphology, lesionRelations y keyPoints: prosa clínica pura (regla 3c). Nunca expliques cómo se ubica en la imagen.
 
 RESPONDE SOLO JSON:
@@ -7310,12 +7336,12 @@ RESPONDE SOLO JSON:
   "panels": [
     {
       "panelLetter": "A",
-      "panelTitle": "Contexto regional",
+      "panelTitle": "${planePair.a.titleEs}",
       "anatomicalFocus": "Foco: ...",
       "laterality": "string",
-      "panelRole": "context|macro",
+      "panelRole": "plane_a",
       "spatialContract": {
-        "view": "string",
+        "view": "${planePair.a.view}",
         "laterality": "string",
         "imageLeftStructure": "string",
         "imageRightStructure": "string",
@@ -7350,16 +7376,25 @@ RESPONDE SOLO JSON:
         });
       }
 
-      let panelsPlan = Array.isArray(planJson.panels) ? planJson.panels.slice(0, wantMacro ? 2 : 1) : [];
+      // Re-resolve pair with lesion labels from the plan (better MSK / shoulder detection).
+      const planePairLocked = resolveFocalPlanePair({
+        organOrStudy: String(organOrStudy || planJson.studyRegion || ""),
+        reportText: String(reportText || ""),
+        focusText: mode === "manual" ? String(focusText || "") : "",
+        lesionLabel: String(planJson.lesionLabel || ""),
+        lesionSite: String(planJson.lesionSite || ""),
+      });
+
+      let panelsPlan = Array.isArray(planJson.panels) ? planJson.panels.slice(0, wantDualPlane ? 2 : 1) : [];
       if (!panelsPlan.length) {
         panelsPlan = [{
           panelLetter: "A",
-          panelTitle: "Contexto regional de la lesión",
+          panelTitle: planePairLocked.a.titleEs,
           anatomicalFocus: `Foco: ${focusText || planJson.lesionLabel || "lesión reportada"}`,
           laterality: laterality || planJson.detectedLaterality || "",
-          panelRole: "context",
+          panelRole: "plane_a",
           spatialContract: {
-            view: "oblique clinical cutaway",
+            view: planePairLocked.a.view,
             laterality: laterality || "",
             imageLeftStructure: "anatomically correct left-of-frame structure",
             imageRightStructure: "anatomically correct right-of-frame structure",
@@ -7370,6 +7405,67 @@ RESPONDE SOLO JSON:
           }
         }];
       }
+      // Force orthogonal plane pair (planner may drift to context/macro).
+      panelsPlan[0] = {
+        ...panelsPlan[0],
+        panelLetter: "A",
+        panelTitle: planePairLocked.a.titleEs,
+        panelRole: "plane_a",
+        spatialContract: {
+          ...(panelsPlan[0].spatialContract || {}),
+          view: planePairLocked.a.view,
+          pathologySite:
+            panelsPlan[0].spatialContract?.pathologySite ||
+            String(planJson.lesionSite || focusText || ""),
+          pathologyAppearance:
+            panelsPlan[0].spatialContract?.pathologyAppearance ||
+            String(planJson.lesionMorphology || ""),
+        },
+      };
+      if (wantDualPlane) {
+        const bSrc = panelsPlan[1] || { ...panelsPlan[0] };
+        panelsPlan[1] = {
+          ...bSrc,
+          panelLetter: "B",
+          panelTitle: planePairLocked.b.titleEs,
+          panelRole: "plane_b",
+          anatomicalFocus:
+            bSrc.anatomicalFocus ||
+            panelsPlan[0].anatomicalFocus ||
+            `Foco: ${planJson.lesionLabel || "lesión"}`,
+          laterality: bSrc.laterality || panelsPlan[0].laterality,
+          spatialContract: {
+            ...(bSrc.spatialContract || {}),
+            view: planePairLocked.b.view,
+            pathologySite:
+              panelsPlan[0].spatialContract?.pathologySite ||
+              String(planJson.lesionSite || focusText || ""),
+            pathologyAppearance:
+              panelsPlan[0].spatialContract?.pathologyAppearance ||
+              String(planJson.lesionMorphology || ""),
+            laterality:
+              bSrc.spatialContract?.laterality ||
+              panelsPlan[0].spatialContract?.laterality ||
+              laterality ||
+              "",
+            mustShowLandmarks:
+              bSrc.spatialContract?.mustShowLandmarks ||
+              panelsPlan[0].spatialContract?.mustShowLandmarks ||
+              [],
+            doNotInvent: [
+              ...new Set([
+                ...(bSrc.spatialContract?.doNotInvent || []),
+                ...(panelsPlan[0].spatialContract?.doNotInvent || []),
+                "different lesion than panel A",
+                "same camera as panel A",
+              ]),
+            ],
+          },
+        };
+        panelsPlan = panelsPlan.slice(0, 2);
+      } else {
+        panelsPlan = panelsPlan.slice(0, 1);
+      }
 
       const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
       const lesionDirective = [
@@ -7377,50 +7473,67 @@ RESPONDE SOLO JSON:
         planJson.lesionSite ? `Site: ${planJson.lesionSite}` : "",
         planJson.lesionMorphology ? `Morphology: ${planJson.lesionMorphology}` : "",
         planJson.lesionSize ? `Size: ${planJson.lesionSize}` : "",
+        `Orthogonal pair: ${planePairLocked.a.labelEs} then ${planePairLocked.b.labelEs} of the SAME lesion.`,
         "Keep orientation landmarks visible; do not invent secondary pathology."
       ].filter(Boolean).join(". ");
 
       const mergedDirectives = [lesionDirective, customDirectives].filter(Boolean).join("\n");
 
-      const buildPanelFromPlan = async (panel: any, idx: number, surgicalCorrection?: string) => {
+      const buildPanelFromPlan = async (
+        panel: any,
+        idx: number,
+        surgicalCorrection?: string,
+        referenceImageUrl?: string | null
+      ) => {
         let contract = normalizeSpatialContract(
           panel.spatialContract,
           panel.laterality || planJson.detectedLaterality || forcedLaterality
         );
+        // Lock forced plane views (never let normalizer/planner drift).
+        contract.view = idx === 1 ? planePairLocked.b.view : planePairLocked.a.view;
         if (!contract.pathologySite && (planJson.lesionSite || focusText)) {
           contract.pathologySite = String(planJson.lesionSite || focusText);
         }
         if (!contract.pathologyAppearance && planJson.lesionMorphology) {
           contract.pathologyAppearance = String(planJson.lesionMorphology);
         }
-        const role = panel.panelRole === "macro" || idx === 1 ? "macro" : "context";
+        const role =
+          idx === 1 || panel.panelRole === "plane_b" || panel.panelRole === "macro"
+            ? "plane_b"
+            : "plane_a";
+        const planeSpec = role === "plane_b" ? planePairLocked.b : planePairLocked.a;
         contract = enforceBreastClockOnContract(contract, {
           laterality: forcedLaterality || panel.laterality || planJson.detectedLaterality,
           anatomicalFocus: panel.anatomicalFocus || `Foco: ${planJson.lesionLabel || "lesión"}`,
           studyRegion: planJson.studyRegion || organOrStudy,
-          panelTitle: panel.panelTitle,
+          panelTitle: planeSpec.titleEs,
           customDirectives: [mergedDirectives, surgicalCorrection, String(focusText || "")].filter(Boolean).join(" "),
         });
+        // Breast clock may rewrite view — restore orthogonal lock after.
+        contract.view = planeSpec.view;
         const promptToUse = buildImagePromptFromContract({
-          panelTitle: panel.panelTitle || (role === "macro" ? "Macro de la lesión" : "Contexto regional"),
+          panelTitle: planeSpec.titleEs,
           anatomicalFocus: panel.anatomicalFocus || `Foco: ${planJson.lesionLabel || "lesión"}`,
           studyRegion: planJson.studyRegion || organOrStudy || "anatomy",
           contract,
           customDirectives: mergedDirectives,
           forcedLaterality,
           surgicalCorrection: [
-            role === "macro"
-              ? "MACRO CUTAWAY: fill most of the frame with the lesion and immediate adjacent tissue; keep 1-2 orientation landmarks."
-              : "REGIONAL CONTEXT: show the lesion in situ within the correct anatomical compartment.",
+            role === "plane_b"
+              ? `ORTHOGONAL PLANE B (${planeSpec.labelEs}): same lesion as Panel A; camera at ~90°; match morphology/site/laterality; do not invent a new lesion.`
+              : `PRIMARY PLANE A (${planeSpec.labelEs}): show the lesion in situ in this anatomic plane with clear orientation landmarks.`,
             surgicalCorrection || ""
           ].filter(Boolean).join(" ")
         });
         try {
-          const imageUrl = await generateMedicalImage(ai, promptToUse);
+          const imageUrl = await generateMedicalImage(ai, promptToUse, {
+            referenceImageUrl: referenceImageUrl || null,
+            referenceKind: referenceImageUrl ? "cgi_sibling" : undefined,
+          });
           return {
             id: `focal-${idx}-${Date.now()}`,
             panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-            panelTitle: panel.panelTitle || (role === "macro" ? "Macro de la lesión" : "Contexto regional"),
+            panelTitle: planeSpec.titleEs,
             anatomicalFocus: panel.anatomicalFocus || `Foco: ${planJson.lesionLabel || "lesión"}`,
             laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
             spatialContract: contract,
@@ -7434,7 +7547,7 @@ RESPONDE SOLO JSON:
           return {
             id: `focal-${idx}-${Date.now()}`,
             panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-            panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+            panelTitle: planeSpec.titleEs,
             anatomicalFocus: panel.anatomicalFocus || "",
             laterality: panel.laterality || "",
             spatialContract: contract,
@@ -7446,22 +7559,36 @@ RESPONDE SOLO JSON:
         }
       };
 
-      let panelsWithImages = await Promise.all(
-        panelsPlan.map((panel: any, idx: number) => buildPanelFromPlan(panel, idx))
-      );
+      // Sequential: A first, then B anchored to A's pixels (coherent dual-plane).
+      const panelA = await buildPanelFromPlan(panelsPlan[0], 0);
+      let panelsWithImages: any[] = [panelA];
+      if (wantDualPlane && panelsPlan[1]) {
+        const panelB = await buildPanelFromPlan(
+          panelsPlan[1],
+          1,
+          undefined,
+          panelA.imageUrl || null
+        );
+        panelsWithImages.push(panelB);
+      }
 
       let qualityAudit: any = { verified: false, panelNotes: [], synopticRewritten: false };
       try {
         const verifiable = panelsWithImages.filter((p: any) => p.imageUrl && stripDataUrl(p.imageUrl));
         if (verifiable.length > 0) {
           const verifyParts: any[] = [{
-            text: `Eres un radiólogo revisor de calidad de CORTE FOCAL 3D.
+            text: `Eres un radiólogo revisor de calidad de CORTE FOCAL 3D (par de planos ortogonales).
 Compara CADA imagen con el informe y el contrato espacial de la lesión objetivo "${planJson.lesionLabel || focusText || ""}" en "${planJson.lesionSite || ""}".
+Par esperado: A=${planePairLocked.a.labelEs} · B=${planePairLocked.b.labelEs}.
 PRIORIDAD #1: LATERALIDAD CON CONVENCIÓN AP (paciente de frente / radiografía AP).
 - Lado del paciente ≠ lado de la mano del observador.
 - AP/coronal/anterior: paciente-derecha → izquierda del cuadro; paciente-izquierda → derecha del cuadro.
 - Si fallan lateralidad o anclas izquierda/derecha del cuadro => lateralityOk=false y pass=false.
 - Si es mama: reloj idéntico en ambas (3=derecha del pezón / 9=izquierda del pezón). Mama izquierda eje 3 = LATERAL/axila = mitad derecha de la mama en imagen (NUNCA medial/esternón). No confundir 3↔9 ni CSE↔CSI.
+PRIORIDAD #2: COHERENCIA DE LA MISMA LESIÓN ENTRE PLANOS.
+- A y B deben mostrar la MISMA lesión (sitio, morfología, tamaño relativo, lateralidad).
+- B debe verse como vista ortogonal (~90°), NO como un clon del mismo ángulo ni como otra patología.
+- Si B diverge de A => pathologyOk=false y pass=false en B (y surgicalCorrection: match Panel A lesion identity, change camera only).
 - surgicalCorrection debe mandar explícitamente viewer-left / viewer-right y clock-hour si aplica.
 - lesionSummary (si lo reescribes): SOLO prosa clínica de informe. PROHIBIDO explicar método de ubicación en pantalla (p. ej. «a la derecha de la imagen respecto al pezón»).
 Devuelve JSON:
@@ -7517,9 +7644,16 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
           qualityAudit.panelNotes = Array.isArray(verifyJson.panels) ? verifyJson.panels : [];
 
           if (Array.isArray(verifyJson.panels)) {
-            const regenJobs: Promise<any>[] = [];
-            for (const note of verifyJson.panels) {
-              if (note?.pass !== false) continue;
+            // Prefer regenerating A before B so B can re-anchor to the corrected A.
+            const failedNotes = verifyJson.panels
+              .filter((note: any) => note?.pass === false)
+              .slice()
+              .sort((a: any, b: any) => {
+                const la = String(a.panelLetter || "").toUpperCase();
+                const lb = String(b.panelLetter || "").toUpperCase();
+                return la.localeCompare(lb);
+              });
+            for (const note of failedNotes) {
               const letter = String(note.panelLetter || "").toUpperCase();
               const idx = panelsWithImages.findIndex((p: any) => String(p.panelLetter).toUpperCase() === letter);
               if (idx < 0) continue;
@@ -7532,21 +7666,44 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
                 contract.view,
                 latFail
               );
-              regenJobs.push(
-                buildPanelFromPlan(originalPlan, idx, correction).then((newPanel) => ({ idx, newPanel, note }))
-              );
-            }
-            const regenResults = await Promise.all(regenJobs);
-            for (const r of regenResults) {
-              panelsWithImages[r.idx] = {
-                ...r.newPanel,
+              const siblingRef =
+                idx === 1 && panelsWithImages[0]?.imageUrl
+                  ? panelsWithImages[0].imageUrl
+                  : null;
+              const newPanel = await buildPanelFromPlan(originalPlan, idx, correction, siblingRef);
+              panelsWithImages[idx] = {
+                ...newPanel,
                 qualityFlags: {
                   regenerated: true,
-                  issues: r.note.issues || [],
+                  issues: note.issues || [],
                   lateralityOk: false,
                   pathologyOk: false
                 }
               };
+              // If A was fixed, refresh B against the new A when B was not already in the fail list
+              // but we still want coherence — only when A failed and B exists.
+              if (idx === 0 && wantDualPlane && panelsPlan[1] && panelsWithImages[1]) {
+                const bAlsoFailed = failedNotes.some(
+                  (n: any) => String(n.panelLetter || "").toUpperCase() === "B"
+                );
+                if (!bAlsoFailed && newPanel.imageUrl) {
+                  const refreshedB = await buildPanelFromPlan(
+                    panelsPlan[1],
+                    1,
+                    "Re-match Panel B to the corrected Panel A: same lesion identity, orthogonal camera only.",
+                    newPanel.imageUrl
+                  );
+                  panelsWithImages[1] = {
+                    ...refreshedB,
+                    qualityFlags: {
+                      regenerated: true,
+                      issues: ["Re-anchored to corrected Panel A"],
+                      lateralityOk: true,
+                      pathologyOk: true
+                    }
+                  };
+                }
+              }
             }
           }
 
@@ -7609,7 +7766,8 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
         customDirectives,
         lesionLabel,
         lesionSite,
-        lesionMorphology
+        lesionMorphology,
+        referenceImageUrl,
       } = req.body;
 
       if (!panel) {
@@ -7620,17 +7778,32 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
       const model = getModelName(requestedModel || "gemini-3.7-flash");
       const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
       const fullReport = typeof reportText === "string" ? reportText : "";
-      const role = panel.panelRole === "macro" ? "macro" : "context";
+      const letter = String(panel.panelLetter || "A").toUpperCase();
+      const role =
+        panel.panelRole === "plane_b" ||
+        panel.panelRole === "macro" ||
+        letter === "B"
+          ? "plane_b"
+          : "plane_a";
+      const planePair = resolveFocalPlanePair({
+        organOrStudy: String(studyRegion || ""),
+        reportText: fullReport,
+        lesionLabel: String(lesionLabel || ""),
+        lesionSite: String(lesionSite || ""),
+        focusText: String(panel.anatomicalFocus || ""),
+      });
+      const planeSpec = role === "plane_b" ? planePair.b : planePair.a;
+      const lockedView = String(panel.spatialContract?.view || "").trim() || planeSpec.view;
 
-      const refinementPrompt = `Eres un Radiólogo y Anatomista Quirúrgico. Refina el CONTRATO ESPACIAL para regenerar el PANEL ${panel.panelLetter || "A"} de un CORTE FOCAL 3D.
+      const refinementPrompt = `Eres un Radiólogo y Anatomista Quirúrgico. Refina el CONTRATO ESPACIAL para regenerar el PANEL ${letter} de un CORTE FOCAL 3D en plano ortogonal.
 
 DATOS:
 - Región: "${studyRegion || "Anatomía médica"}"
 - Lesión objetivo: "${lesionLabel || ""}" en "${lesionSite || ""}"
 - Morfología: "${lesionMorphology || ""}"
-- Título panel: "${panel.panelTitle || ""}"
+- Título panel: "${panel.panelTitle || planeSpec.titleEs}"
 - Foco: "${panel.anatomicalFocus || ""}"
-- Rol: "${role}"
+- Rol / plano: "${role}" → view OBLIGATORIO: "${lockedView}"
 - Lateralidad: "${forcedLaterality || panel.laterality || ""}"
 - Contrato previo: ${JSON.stringify(panel.spatialContract || {})}
 - Directiva clínica: "${customDirectives || "Ninguna"}"
@@ -7642,10 +7815,10 @@ ${fullReport}
 
 RESPONDE SOLO JSON:
 {
-  "panelTitle": "string",
+  "panelTitle": "${planeSpec.titleEs}",
   "anatomicalFocus": "Foco: ...",
   "spatialContract": {
-    "view": "string",
+    "view": "${lockedView}",
     "laterality": "string",
     "imageLeftStructure": "string",
     "imageRightStructure": "string",
@@ -7669,7 +7842,7 @@ RESPONDE SOLO JSON:
         refineJson = JSON.parse(refineResponse.text || "{}");
       } catch {
         refineJson = {
-          panelTitle: panel.panelTitle,
+          panelTitle: panel.panelTitle || planeSpec.titleEs,
           anatomicalFocus: panel.anatomicalFocus,
           spatialContract: panel.spatialContract || {}
         };
@@ -7684,13 +7857,19 @@ RESPONDE SOLO JSON:
           laterality: forcedLaterality || panel.laterality,
           anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
           studyRegion,
-          panelTitle: refineJson.panelTitle || panel.panelTitle,
+          panelTitle: refineJson.panelTitle || panel.panelTitle || planeSpec.titleEs,
           customDirectives: [lesionLabel, lesionSite, customDirectives, userDirective].filter(Boolean).join(" "),
         }
       );
+      contract.view = lockedView;
+
+      const siblingRef =
+        typeof referenceImageUrl === "string" && referenceImageUrl.startsWith("data:image")
+          ? referenceImageUrl
+          : null;
 
       const finalPrompt = buildImagePromptFromContract({
-        panelTitle: refineJson.panelTitle || panel.panelTitle || `Panel ${panel.panelLetter || ""}`,
+        panelTitle: refineJson.panelTitle || panel.panelTitle || planeSpec.titleEs,
         anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus || "Foco lesion",
         studyRegion: studyRegion || "anatomy",
         contract,
@@ -7700,20 +7879,23 @@ RESPONDE SOLO JSON:
         ].filter(Boolean).join("\n"),
         forcedLaterality,
         surgicalCorrection: [
-          role === "macro"
-            ? "MACRO CUTAWAY of the target lesion with orientation landmarks."
-            : "Regional context with lesion in correct compartment.",
+          role === "plane_b"
+            ? `ORTHOGONAL PLANE (${planeSpec.labelEs}): same lesion as sibling reference panel; change camera only.`
+            : `PRIMARY PLANE (${planeSpec.labelEs}): lesion in situ with orientation landmarks.`,
           userDirective || ""
         ].filter(Boolean).join(" ")
       });
 
-      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+      const imageUrl = await generateMedicalImage(ai, finalPrompt, {
+        referenceImageUrl: siblingRef,
+        referenceKind: siblingRef ? "cgi_sibling" : undefined,
+      });
 
       res.json({
         success: true,
         panel: {
           ...panel,
-          panelTitle: refineJson.panelTitle || panel.panelTitle,
+          panelTitle: refineJson.panelTitle || panel.panelTitle || planeSpec.titleEs,
           anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
           laterality: forcedLaterality || panel.laterality,
           spatialContract: contract,

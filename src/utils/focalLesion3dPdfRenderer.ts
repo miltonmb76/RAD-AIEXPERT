@@ -4,6 +4,7 @@ import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
 import { ANNEX_CAPTION_GAP } from "./pdfAnnexChrome";
 import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
+import { focalPlaneBadge } from "../lib/focalPlanePair";
 
 /**
  * Annex for Focal Lesion Corte 3D — always ONE page.
@@ -313,7 +314,7 @@ export function renderFocalLesion3DAnnexToPDF(
       factor
     );
 
-    const roleTag = p.panelRole === "macro" ? "MACRO" : "CTX";
+    const roleTag = focalPlaneBadge(p).toUpperCase();
     const badgeLabel = `PANEL ${p.panelLetter} · ${roleTag}`;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(6.2 * factor);

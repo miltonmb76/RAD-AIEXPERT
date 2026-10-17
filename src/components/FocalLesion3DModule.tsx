@@ -27,6 +27,7 @@ import {
   withSuggestedImageAnnotations,
 } from "../lib/suiteImageAnnotations";
 import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
+import { focalPlaneBadge } from "../lib/focalPlanePair";
 
 interface FocalLesion3DModuleProps {
   reportText: string;
@@ -107,11 +108,22 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
     const stepTimers: ReturnType<typeof setTimeout>[] = [];
     try {
       stepTimers.push(
-        setTimeout(() => setGenerationStep("Renderizando corte 3D con fidelidad Atlas..."), 2000)
+        setTimeout(
+          () =>
+            setGenerationStep(
+              includeMacroPanel
+                ? "Renderizando plano A, luego plano B anclado a la misma lesión..."
+                : "Renderizando plano focal con fidelidad Atlas..."
+            ),
+          2000
+        )
       );
       stepTimers.push(
         setTimeout(
-          () => setGenerationStep("Verificando lateralidad, sitio y morfología (auto-corrección)..."),
+          () =>
+            setGenerationStep(
+              "Verificando lateralidad, coherencia entre planos y morfología..."
+            ),
           8000
         )
       );
@@ -268,6 +280,14 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
     setErrorMessage(null);
     try {
       const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData || null);
+      const letter = String(panel.panelLetter || "").toUpperCase();
+      // When regenerating B, pass A as CGI sibling reference for lesion identity.
+      const siblingRef =
+        letter === "B"
+          ? focalData.panels.find((p) => String(p.panelLetter).toUpperCase() === "A")?.imageUrl
+          : letter === "A"
+            ? focalData.panels.find((p) => String(p.panelLetter).toUpperCase() === "B")?.imageUrl
+            : undefined;
       const response = await fetch("/api/regenerate-focal-lesion-panel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -281,7 +301,9 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
           customDirectives: [scorecardDirectives, customDirectives].filter(Boolean).join("\n"),
           lesionLabel: focalData.lesionLabel,
           lesionSite: focalData.lesionSite,
-          lesionMorphology: focalData.lesionMorphology
+          lesionMorphology: focalData.lesionMorphology,
+          // Prefer A→B anchor; for A regen, optional B ref is weaker but still helps identity.
+          referenceImageUrl: letter === "B" ? siblingRef : undefined,
         })
       });
       const resData = await response.json();
@@ -320,7 +342,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-              Corte 3D de una sola lesión (auto o manual). No se ejecuta en lote; solo bajo demanda.
+              Misma lesión en dos planos ortogonales (p. ej. coronal+sagital en hombro). Bajo demanda.
             </p>
           </div>
         </div>
@@ -387,7 +409,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
               className="rounded border-slate-700 text-teal-600 h-3.5 w-3.5 cursor-pointer"
             />
             <span className="text-[10px] font-bold text-slate-300 font-mono uppercase">
-              Incluir panel macro
+              Segundo plano ortogonal
             </span>
           </label>
         </div>
@@ -396,7 +418,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
             type="text"
             value={focusText}
             onChange={(e) => setFocusText(e.target.value)}
-            placeholder='Ej: "nódulo sólido BI-RADS 4A en CSE mama izquierda 12 mm" o "ruptura parcial supraespinoso"'
+            placeholder='Ej: "ruptura parcial supraespinoso" o "nódulo BI-RADS 4A mama izquierda 12 mm"'
             className="w-full bg-slate-900/90 border border-teal-500/30 focus:border-teal-500 rounded-xl px-3 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 outline-none font-sans"
           />
         )}
@@ -662,7 +684,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                       Panel {panel.panelLetter}
                     </span>
                     <span className="text-[9px] font-black uppercase bg-slate-900/80 text-teal-200 px-2 py-0.5 rounded-md font-mono border border-teal-500/30 whitespace-nowrap shrink-0">
-                      {panel.panelRole === "macro" ? "Macro" : "Contexto"}
+                      {focalPlaneBadge(panel)}
                     </span>
                   </div>
                   <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
