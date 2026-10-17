@@ -283,9 +283,9 @@ export interface Vascular3DData {
   morphologicalSynthesis?: string;
 }
 
-/** Panel for Focal Lesion Corte 3D (context or macro zoom). */
+/** Panel for Focal Lesion Corte 3D (orthogonal plane pair, or legacy context/macro). */
 export interface FocalLesion3DPanel extends Atlas3DPanel {
-  panelRole?: "context" | "macro";
+  panelRole?: "context" | "macro" | "plane_a" | "plane_b";
 }
 
 export interface FocalLesion3DData {
