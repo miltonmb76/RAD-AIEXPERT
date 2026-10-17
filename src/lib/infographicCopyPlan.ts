@@ -165,5 +165,6 @@ REGLAS:
 - ${reco}
 - Sin nombre del paciente ni identificadores.
 - Sin "paciente anónimo" ni sellos de anonimato.
+- NO pidas ni etiquetes "Imagen 1/2", capturas ni fotogramas de ultrasonido: la infografía solo usa anatomía ilustrada + texto (sin eco real).
 `.trim();
 }
