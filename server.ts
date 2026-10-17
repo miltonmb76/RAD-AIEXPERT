@@ -36,6 +36,7 @@ import {
   INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
   redactPatientIdentifiersForInfographic,
 } from "./src/lib/infographicPrivacy";
+import { INFOGRAPHIC_NO_REAL_US_PROMPT_BLOCK } from "./src/lib/infographicNoRealUs";
 import {
   INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK,
   buildInfographicCopyPlanPrompt,
@@ -1904,9 +1905,10 @@ ${buildLockedCopyPromptBlock(copyPlan)}
 `
       : "";
 
-    // Laterality + breast clock FIRST — image models overweight early instructions.
+    // Laterality + breast clock + no-real-US FIRST — image models overweight early instructions.
     const lateralityLead = `
-ANTES DE DIBUJAR — LATERALIDAD Y RELOJ DE MAMA (si fallas esto la imagen NO sirve):
+ANTES DE DIBUJAR (si fallas esto la imagen NO sirve):
+- SIN ECO REAL: no dibujes fotogramas de ultrasonido (B-mode, Doppler, elastografía sobre eco, "Imagen 1/2"). Solo anatomía CGI + texto + gráficos de datos.
 ORIENTACIÓN: ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
 ${lateralityBlock}
 ${breastClockBlock ? `\n${breastClockBlock}\n` : ""}
@@ -1932,6 +1934,8 @@ ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
 ${INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK}
 
+${INFOGRAPHIC_NO_REAL_US_PROMPT_BLOCK}
+
 ESTILO (médico / científico):
 - Look de atlas o ficha clínica premium: tipografía sobria (sans geométrica o serif editorial), paleta fría o neutra (slate/azul médico), sin tono infantil ni “app de wellness”.
 - Título formal${isDirected ? ` centrado en «${topicText}»` : " (p. ej. correlación anatomopatológica / mapa de hallazgos)"}${copyPlan ? ` — usa el TÍTULO del guion bloqueado` : ""}.
@@ -1941,11 +1945,12 @@ ESTILO (médico / científico):
 - Pie breve${copyPlan?.footer ? ` (usa el PIE del guion)` : ": “Anexo visual · no sustituye el informe completo”"}. Sin logo inventado.
 
 CONTENIDO — QUÉ SÍ / QUÉ NO:
-- SÍ: ${isDirected ? "el hallazgo/tema indicado, sus rasgos, lateralidad y medidas si constan" : "hallazgos principales del reporte, lateralidad, medidas si constan"}${copyPlan ? " — prioriza el guion bloqueado" : ""}.
+- SÍ: ${isDirected ? "el hallazgo/tema indicado, sus rasgos, lateralidad y medidas si constan" : "hallazgos principales del reporte, lateralidad, medidas si constan"}${copyPlan ? " — prioriza el guion bloqueado" : ""} — con anatomía ilustrada / CGI, no con fotogramas de eco.
 ${recoBlock}
 - NO inventes mediciones ni hallazgos ausentes del reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo).
 - NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
+- NO: imágenes de ultrasonido reales ni imitaciones (B-mode, Doppler, elastografía sobre eco, "Imagen 1/2").
 - RELEE la LATERALIDAD del inicio: el hallazgo debe estar en el lado del CUADRO indicado (AP = espejo; PA = mismo lado).
 
 Entrega una sola imagen vertical, lista como anexo clínico.
@@ -1966,6 +1971,8 @@ ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
 ${INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK}
 
+${INFOGRAPHIC_NO_REAL_US_PROMPT_BLOCK}
+
 LIBERTAD DE DISEÑO (importante):
 - Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
 - NO uses una plantilla fija ni un esquema rígido de secciones.
@@ -1976,11 +1983,12 @@ LIBERTAD DE DISEÑO (importante):
 - Incluye un pie breve de disclaimer informativo${copyPlan?.footer ? " (usa el PIE del guion)" : " (no sustituye la valoración médica)"}. Sin logo de clínica inventado ni marca comercial inventada.
 
 CONTENIDO — QUÉ SÍ / QUÉ NO:
-- SÍ: explicar de forma visual ${isDirected ? "el hallazgo/tema indicado" : "los hallazgos principales del reporte"}${copyPlan ? " — prioriza el guion bloqueado" : ""}.
+- SÍ: explicar de forma visual ${isDirected ? "el hallazgo/tema indicado" : "los hallazgos principales del reporte"}${copyPlan ? " — prioriza el guion bloqueado" : ""} — con anatomía ilustrada / CGI, no con fotogramas de eco.
 ${recoBlock}
 - NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo / placeholder).
 - NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
+- NO: imágenes de ultrasonido reales ni imitaciones (B-mode, Doppler, elastografía sobre eco, "Imagen 1/2").
 - RELEE la LATERALIDAD del inicio: el hallazgo debe estar en el lado del CUADRO indicado (AP = espejo; PA = mismo lado).
 
 Entrega una sola imagen vertical, lista para compartir con el paciente.
