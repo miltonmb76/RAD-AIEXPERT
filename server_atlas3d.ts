@@ -8632,8 +8632,8 @@ JSON:
   });
 
   /**
-   * Multi-finding Explainer: plan 1–3 findings, then generate CGI (+ optional US match)
-   * nearly in parallel for each card.
+   * Multi-finding Explainer: plan 1–4 findings (2 per PDF page), then generate CGI
+   * (+ optional US match) nearly in parallel for each card.
    */
   app.post("/api/generate-finding-explainers", async (req: express.Request, res: express.Response) => {
     try {
@@ -8657,7 +8657,9 @@ JSON:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.8-flash");
       const reportSlice = String(reportText).slice(0, 4000);
-      const maxN = Math.min(3, Math.max(1, Number(maxFindings) || 2));
+      const maxN = Math.min(4, Math.max(1, Number(maxFindings) || 2));
+      const hintsText = String(findingHints || "").trim();
+      const hasOrderedSlots = /SLOTS OBLIGATORIOS|Hallazgo\s+\d+\s*:/i.test(hintsText);
       const gallery = Array.isArray(galleryImages)
         ? galleryImages
             .filter((g: any) => g && g.url && String(g.url).startsWith("data:"))
@@ -8671,7 +8673,7 @@ JSON:
         )
         .join("\n");
 
-      const planPrompt = `Eres radiólogo. Extrae hasta ${maxN} hallazgos clinicos DISTINTOS del informe para un EXPLAINER (ficha corta eco+CGI+3 bullets).
+      const planPrompt = `Eres radiólogo. Extrae hasta ${maxN} hallazgos clinicos DISTINTOS del informe para un EXPLAINER (ficha corta eco+CGI+3 bullets; PDF: 2 por pagina).
 
 INFORME:
 """
@@ -8679,9 +8681,9 @@ ${reportSlice}
 """
 Estudio: "${organOrStudy || ""}"
 Lateralidad pedida: "${laterality || "auto"}"
-Pistas del usuario / ancla:
+Pistas del usuario / ancla / slots:
 """
-${findingHints || "Ninguna — elige los hallazgos mas relevantes (dominante primero)."}
+${hintsText || "Ninguna — elige los hallazgos mas relevantes (dominante primero)."}
 """
 Galeria de capturas (indices para emparejar eco):
 ${galleryCatalog || "(sin capturas)"}
@@ -8704,7 +8706,8 @@ Devuelve JSON estricto:
 }
 
 Reglas:
-- Maximo ${maxN} findings. Si el usuario listo hallazgos concretos, priorizalos.
+- Exactamente ${maxN} findings (ni mas ni menos) cuando haya slots rellenos; si no hay slots, hasta ${maxN} de los mas relevantes.
+${hasOrderedSlots ? `- HAY SLOTS OBLIGATORIOS: findings[0] = Hallazgo 1, findings[1] = Hallazgo 2, etc. Respeta el orden y el foco de cada slot; ancla cada ficha al texto del slot + evidencia del informe.` : "- Si el usuario listo hallazgos concretos, priorizalos."}
 - No inventes patologia ausente del informe.
 - galleryIndex = indice entero de la galeria cuya caption/label mejor corresponde a ESE hallazgo, o null.
 - Cada finding debe ser distinto (no repetir el mismo con otro nombre).

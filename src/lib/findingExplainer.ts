@@ -27,9 +27,45 @@ export type FindingExplainerData = {
   generatedAt?: string;
 };
 
-export const FINDING_EXPLAINER_MAX_CARDS = 3;
+export const FINDING_EXPLAINER_MAX_CARDS = 4;
 /** Max chars for image rotulo under eco/CGI (fits one line in UI + PDF). */
 export const EXPLAINER_ROTULO_MAX = 42;
+
+/** Fixed annotation slots shown in the Explainer UI (Hallazgo 1..N). */
+export const FINDING_EXPLAINER_SLOT_COUNT = FINDING_EXPLAINER_MAX_CARDS;
+
+export function emptyFindingExplainerSlots(): string[] {
+  return Array.from({ length: FINDING_EXPLAINER_SLOT_COUNT }, () => "");
+}
+
+/** Build ordered server hints from filled Hallazgo 1..N slots. */
+export function buildFindingExplainerSlotHints(
+  slots: string[],
+  opts?: { diagnosisAnchor?: string }
+): { findingHints: string; maxFindings: number; filledSlots: string[] } {
+  const filledSlots = (slots || [])
+    .slice(0, FINDING_EXPLAINER_SLOT_COUNT)
+    .map((s) => String(s || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const lines = filledSlots.map((text, i) => `Hallazgo ${i + 1}: ${text}`);
+  const anchor = String(opts?.diagnosisAnchor || "").trim();
+  const parts = [
+    anchor ? `Ancla diagnostica: ${anchor}` : "",
+    filledSlots.length
+      ? [
+          "SLOTS OBLIGATORIOS (orden fijo; genera EXACTAMENTE estos hallazgos, uno por slot relleno; no inventes extras ni omitas slots rellenos):",
+          ...lines,
+        ].join("\n")
+      : "",
+  ].filter(Boolean);
+  return {
+    findingHints: parts.join("\n\n"),
+    maxFindings: filledSlots.length
+      ? Math.min(FINDING_EXPLAINER_MAX_CARDS, filledSlots.length)
+      : 2,
+    filledSlots,
+  };
+}
 
 /**
  * Short image caption for Explainer cards.

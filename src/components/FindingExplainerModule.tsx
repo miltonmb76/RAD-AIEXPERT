@@ -10,6 +10,8 @@ import {
 import {
   FINDING_EXPLAINER_MAX_CARDS,
   assignEcoToExplainerCard,
+  buildFindingExplainerSlotHints,
+  emptyFindingExplainerSlots,
   findingExplainerIsRenderable,
   normalizeFindingExplainerData,
   type FindingExplainerData,
@@ -51,10 +53,16 @@ export const FindingExplainerModule: React.FC<Props> = ({
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [extraFindings, setExtraFindings] = useState("");
-  const [maxCards, setMaxCards] = useState(2);
+  const [findingSlots, setFindingSlots] = useState<string[]>(() =>
+    emptyFindingExplainerSlots()
+  );
   /** Card id whose eco gallery picker is open */
   const [pickingEcoFor, setPickingEcoFor] = useState<string | null>(null);
+
+  const filledSlotCount = useMemo(
+    () => findingSlots.filter((s) => String(s || "").trim()).length,
+    [findingSlots]
+  );
 
   const gallery = useMemo(
     () =>
@@ -68,6 +76,15 @@ export const FindingExplainerModule: React.FC<Props> = ({
         })),
     [attachedImages]
   );
+
+  const setSlot = (index: number, value: string) => {
+    setFindingSlots((prev) => {
+      const next = [...prev];
+      while (next.length < FINDING_EXPLAINER_MAX_CARDS) next.push("");
+      next[index] = value;
+      return next.slice(0, FINDING_EXPLAINER_MAX_CARDS);
+    });
+  };
 
   const assignEco = (
     cardId: string,
@@ -99,14 +116,10 @@ export const FindingExplainerModule: React.FC<Props> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const hints = [
-        diagnosisAnchor?.trim() ? `Ancla diagnostica: ${diagnosisAnchor.trim()}` : "",
-        extraFindings.trim()
-          ? `Hallazgos a priorizar (separados por ; o salto de linea):\n${extraFindings.trim()}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      const { findingHints, maxFindings } = buildFindingExplainerSlotHints(
+        findingSlots,
+        { diagnosisAnchor }
+      );
 
       const response = await fetch("/api/generate-finding-explainers", {
         method: "POST",
@@ -116,8 +129,8 @@ export const FindingExplainerModule: React.FC<Props> = ({
           organOrStudy: studyType || "",
           laterality: laterality && laterality !== "auto" ? laterality : undefined,
           requestedModel: selectedModel,
-          maxFindings: maxCards,
-          findingHints: hints || undefined,
+          maxFindings,
+          findingHints: findingHints || undefined,
           galleryImages: gallery.map((g) => ({
             id: g.id,
             url: g.url,
@@ -130,7 +143,9 @@ export const FindingExplainerModule: React.FC<Props> = ({
       if (!response.ok || !json.success || !json.data) {
         throw new Error(json.error || "No se pudo generar el explainer.");
       }
-      setExplainerData(normalizeFindingExplainerData(json.data, { maxCards }));
+      setExplainerData(
+        normalizeFindingExplainerData(json.data, { maxCards: maxFindings })
+      );
       setIncludeInReport(true);
     } catch (e: any) {
       setError(String(e?.message || e));
@@ -157,9 +172,9 @@ export const FindingExplainerModule: React.FC<Props> = ({
               Explainer de hallazgos
             </h3>
             <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">
-              Hasta {FINDING_EXPLAINER_MAX_CARDS} hallazgos apilados: eco + CGI 3D + 3 bullets
-              (que es / donde / que implica — explicación del hallazgo, sin manejo). Se generan
-              en paralelo.
+              Hasta {FINDING_EXPLAINER_MAX_CARDS} hallazgos (2 por página en el PDF): eco + CGI
+              3D + 3 bullets (qué es / dónde / qué implica — sin manejo). Anota cada hallazgo en
+              su casilla.
             </p>
           </div>
         </div>
@@ -175,37 +190,57 @@ export const FindingExplainerModule: React.FC<Props> = ({
         </label>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
-        <div className="space-y-2">
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
           <label className="block text-[10px] uppercase tracking-widest text-amber-200/80 font-semibold">
-            Hallazgos a priorizar (opcional)
+            Hallazgos a representar
           </label>
-          <textarea
-            value={extraFindings}
-            onChange={(e) => setExtraFindings(e.target.value)}
-            rows={2}
-            placeholder={"Ej.\nHemangioma hepatico\nPolipo vesicular"}
-            className="w-full bg-slate-950/80 border border-slate-700 focus:border-amber-500 rounded-xl px-3 py-2 text-[12px] text-slate-200 outline-none resize-none"
-          />
+          <span className="text-[10px] text-slate-500 font-mono">
+            {filledSlotCount
+              ? `${filledSlotCount} de ${FINDING_EXPLAINER_MAX_CARDS} rellenos · PDF: 2/página`
+              : `Vacío → elige los más relevantes (máx. ${FINDING_EXPLAINER_MAX_CARDS})`}
+          </span>
         </div>
-        <div className="flex flex-col gap-2 min-w-[160px]">
-          <label className="text-[10px] uppercase tracking-widest text-amber-200/80 font-semibold">
-            Max. fichas
-          </label>
-          <select
-            value={maxCards}
-            onChange={(e) => setMaxCards(Number(e.target.value))}
-            className="bg-slate-950/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100"
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Array.from({ length: FINDING_EXPLAINER_MAX_CARDS }, (_, i) => (
+            <div key={i} className="space-y-1.5">
+              <label
+                htmlFor={`explainer-slot-${i + 1}`}
+                className="text-[10px] font-bold uppercase tracking-wider text-amber-100/90"
+              >
+                Hallazgo {i + 1}
+              </label>
+              <input
+                id={`explainer-slot-${i + 1}`}
+                type="text"
+                value={findingSlots[i] || ""}
+                onChange={(e) => setSlot(i, e.target.value)}
+                placeholder={
+                  i === 0
+                    ? 'Ej. "Ruptura parcial supraespinoso"'
+                    : i === 1
+                      ? 'Ej. "Tendinosis bicipital"'
+                      : "Opcional — deja vacío si no aplica"
+                }
+                className="w-full bg-slate-950/80 border border-slate-700 focus:border-amber-500 rounded-xl px-3 py-2.5 text-[12px] text-slate-200 outline-none placeholder:text-slate-600"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={isLoading || filledSlotCount === 0}
+            onClick={() => setFindingSlots(emptyFindingExplainerSlots())}
+            className="text-[11px] text-slate-400 hover:text-slate-200 disabled:opacity-40 px-2 py-1"
           >
-            <option value={1}>1 hallazgo</option>
-            <option value={2}>2 hallazgos</option>
-            <option value={3}>3 hallazgos</option>
-          </select>
+            Limpiar casillas
+          </button>
           <button
             type="button"
             disabled={isLoading}
             onClick={() => void handleGenerate()}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 text-slate-950 font-bold text-sm px-4 py-2.5"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 text-slate-950 font-bold text-sm px-4 py-2.5 min-w-[180px]"
           >
             {isLoading ? (
               <>
@@ -216,6 +251,7 @@ export const FindingExplainerModule: React.FC<Props> = ({
               <>
                 <Sparkles className="w-4 h-4" />
                 Generar explainer
+                {filledSlotCount > 0 ? ` (${filledSlotCount})` : ""}
               </>
             )}
           </button>
@@ -226,7 +262,8 @@ export const FindingExplainerModule: React.FC<Props> = ({
         {gallery.length > 0 ? (
           <>
             {gallery.length} captura{gallery.length === 1 ? "" : "s"} en galería.
-            Tras generar, elige la eco de cada ficha con <span className="text-amber-200/90">Elegir eco</span>.
+            Tras generar, elige la eco de cada ficha con{" "}
+            <span className="text-amber-200/90">Elegir eco</span>.
           </>
         ) : (
           <>Sube capturas a la galería del estudio para poder elegir la eco de cada ficha.</>
@@ -428,7 +465,8 @@ export const FindingExplainerModule: React.FC<Props> = ({
         <div className="rounded-xl border border-dashed border-amber-800/40 bg-slate-950/40 px-6 py-10 text-center">
           <Layers className="w-8 h-8 mx-auto mb-3 text-amber-500/80" />
           <p className="text-sm text-slate-300">
-            Genera 1–3 fichas apiladas (eco + CGI + bullets) a partir del informe.
+            Anota hasta {FINDING_EXPLAINER_MAX_CARDS} hallazgos (casillas 1–4) y genera las
+            fichas. En el PDF van 2 por página.
           </p>
         </div>
       )}
