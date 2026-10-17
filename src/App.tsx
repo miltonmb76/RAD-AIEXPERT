@@ -12181,7 +12181,7 @@ Ejemplo:
                                     Explainer de hallazgos
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    1?3 fichas apiladas: eco + CGI 3D + bullets (que es / donde / implica), en paralelo.
+                                    Hasta 4 fichas (2 por pagina): casillas Hallazgo 1-4, eco + CGI 3D + bullets.
                                   </p>
                                 </div>
                               </div>
