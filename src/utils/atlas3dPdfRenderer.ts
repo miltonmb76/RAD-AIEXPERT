@@ -1,6 +1,9 @@
 import { Atlas3DData } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
+import {
+  drawPackAnnexHeaderBand,
+} from "./pdfAnnexChrome";
 import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 
 export function renderAtlas3DAnnexToPDF(
@@ -27,21 +30,14 @@ export function renderAtlas3DAnnexToPDF(
   // Add dedicated exclusive page
   doc.addPage();
   
-  // Start comfortably below running header line (y=14)
-  let yCoord = 22 * factor;
-
-  // 1. TOP HEADER (Medical Atlas Style)
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5 * factor);
-  doc.setTextColor(15, 23, 42); // slate-900
-  doc.text("ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA", marginX, yCoord);
-  yCoord += 4.5 * factor;
-
-  // Top Accent Line (Indigo gradient representation)
-  doc.setDrawColor(99, 102, 241); // Indigo-500
-  doc.setLineWidth(0.8);
-  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-  yCoord += 7 * factor;
+  let yCoord = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: 20 * factor,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA",
+    afterGap: 7 * factor,
+  });
 
   // 2. FIGURE TITLE BANNER (Elegantly styled box with left purple accent)
   const regionLabel = atlasData.studyRegion || "Región Anatómica Evaluada";
@@ -214,21 +210,14 @@ export function renderAtlas3DAnnexToPDF(
 
   const startContinuationPage = (subtitle: string) => {
     doc.addPage();
-    yCoord = 22 * factor;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11 * factor);
-    doc.setTextColor(15, 23, 42);
-    doc.text("ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA", marginX, yCoord);
-    yCoord += 4 * factor;
-    doc.setDrawColor(99, 102, 241);
-    doc.setLineWidth(0.6);
-    doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-    yCoord += 5 * factor;
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(8 * factor);
-    doc.setTextColor(100, 116, 139);
-    doc.text(subtitle, marginX, yCoord);
-    yCoord += 6 * factor;
+    yCoord = drawPackAnnexHeaderBand(doc, {
+      x: marginX,
+      y: 20 * factor,
+      width: contentWidth,
+      factor,
+      title: "ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA",
+      afterGap: 6 * factor,
+    });
   };
 
   // 4. SYNOPTIC CORRELATION TABLE

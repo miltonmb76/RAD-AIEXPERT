@@ -3,6 +3,7 @@ import { MuscleTendon3DData, MuscleTendon3DPanel, MuscleTendonFindingRow } from 
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
 import {
+  drawPackAnnexHeaderBand,
   ANNEX_CAPTION_GAP,
   drawAnnexPanelBadge,
   softBorderFromAccent,
@@ -36,18 +37,14 @@ export async function renderMuscleTendon3DPageToPdf(
 
   doc.addPage();
 
-  let yCoord = 22 * factor;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN", marginX, yCoord);
-  yCoord += 4.5 * factor;
-
-  doc.setDrawColor(accent[0], accent[1], accent[2]);
-  doc.setLineWidth(0.8);
-  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-  yCoord += 6.5 * factor;
+  let yCoord = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: 20 * factor,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN",
+    afterGap: 6.5 * factor,
+  });
 
   const territory = muscleTendonData.territoryLabel || "ECOGRAFÍA MÚSCULO-TENDÓN";
   const figTitle = muscleTendonData.figureTitle || `FIGURA 1. ATLAS 3D MÚSCULO-TENDÓN Y CORRELACIÓN ANATOMOPATOLÓGICA — ${territory.toUpperCase()}`;
@@ -252,16 +249,14 @@ const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
 
   // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
   doc.addPage();
-  yCoord = 22 * factor;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SUITE MUSCULAR / TENDINOSA 3D — TABLA Y SÍNTESIS", marginX, yCoord);
-  yCoord += 4.2 * factor;
-  doc.setDrawColor(accent[0], accent[1], accent[2]);
-  doc.setLineWidth(0.7);
-  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-  yCoord += 6 * factor;
+  yCoord = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: 20 * factor,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: SUITE MUSCULAR / TENDINOSA 3D — TABLA Y SÍNTESIS",
+    afterGap: 6 * factor,
+  });
   // Fixed 8-col finding table (matches UI / API contract)
   const tableData: MuscleTendonFindingRow[] = muscleTendonData.findingTable || [];
   const tableTitle = muscleTendonData.tableTitle || "TABLA ECOGRÁFICA MÚSCULO-TENDÓN:";
@@ -393,21 +388,14 @@ const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
 
     const startSynthContinuationPage = () => {
       doc.addPage();
-      yCoord = 22 * factor;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11 * factor);
-      doc.setTextColor(15, 23, 42);
-      doc.text("ANEXO: SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN", marginX, yCoord);
-      yCoord += 4 * factor;
-      doc.setDrawColor(accent[0], accent[1], accent[2]);
-      doc.setLineWidth(0.6);
-      doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-      yCoord += 5 * factor;
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8 * factor);
-      doc.setTextColor(100, 116, 139);
-      doc.text("Continuación — síntesis morfológica músculo-tendinosa", marginX, yCoord);
-      yCoord += 6 * factor;
+      yCoord = drawPackAnnexHeaderBand(doc, {
+        x: marginX,
+        y: 20 * factor,
+        width: contentWidth,
+        factor,
+        title: "ANEXO: SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN",
+        afterGap: 6 * factor,
+      });
     };
 
     const drawSynthChrome = (boxH: number, includeTitle: boolean) => {

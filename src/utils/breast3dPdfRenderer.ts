@@ -3,6 +3,7 @@ import { Breast3DData, Breast3DPanel, BreastLesionRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
 import {
+  drawPackAnnexHeaderBand,
   ANNEX_CAPTION_GAP,
   drawAnnexPanelBadge,
   softBorderFromAccent,
@@ -46,20 +47,14 @@ export async function renderBreast3DPageToPdf(
   // Add dedicated exclusive page
   doc.addPage();
 
-  // 1. TOP HEADER (Medical Vascular Style)
-  let yCoord = 22 * factor;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5 * factor);
-  doc.setTextColor(15, 23, 42); // slate-900
-  doc.text("ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D", marginX, yCoord);
-  yCoord += 4.5 * factor;
-
-  // Accent Line (Royal Teal / Vascular Purple-Blue)
-  doc.setDrawColor(219, 39, 119); // Teal-600
-  doc.setLineWidth(0.8);
-  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-  yCoord += 6.5 * factor;
+  let yCoord = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: 20 * factor,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D",
+    afterGap: 6.5 * factor,
+  });
 
   // 2. FIGURE TITLE BANNER
   const territory = breastData.territoryLabel || "DOPPLER VASCULAR";
@@ -292,16 +287,14 @@ const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
 
   // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
   doc.addPage();
-  yCoord = 22 * factor;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SUITE MAMA 3D — TABLA Y SÍNTESIS", marginX, yCoord);
-  yCoord += 4.2 * factor;
-  doc.setDrawColor(219, 39, 119);
-  doc.setLineWidth(0.7);
-  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-  yCoord += 6 * factor;
+  yCoord = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: 20 * factor,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: SUITE MAMA 3D — TABLA Y SÍNTESIS",
+    afterGap: 6 * factor,
+  });
 
   const tableData: BreastLesionRow[] = breastData.lesionTable || [];
   const tableTitle = breastData.tableTitle || `TABLA ECOGRÁFICA Y CARACTERIZACIÓN DE LESIONES MAMARIAS:`;
@@ -466,21 +459,14 @@ const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
 
     const startSynthContinuationPage = () => {
       doc.addPage();
-      yCoord = 22 * factor;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11 * factor);
-      doc.setTextColor(15, 23, 42);
-      doc.text("ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D", marginX, yCoord);
-      yCoord += 4 * factor;
-      doc.setDrawColor(219, 39, 119);
-      doc.setLineWidth(0.6);
-      doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-      yCoord += 5 * factor;
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8 * factor);
-      doc.setTextColor(100, 116, 139);
-      doc.text("Continuación — síntesis morfológica y hemodinámica", marginX, yCoord);
-      yCoord += 6 * factor;
+      yCoord = drawPackAnnexHeaderBand(doc, {
+        x: marginX,
+        y: 20 * factor,
+        width: contentWidth,
+        factor,
+        title: "ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D",
+        afterGap: 6 * factor,
+      });
     };
 
     const drawSynthChrome = (boxH: number, includeTitle: boolean) => {
