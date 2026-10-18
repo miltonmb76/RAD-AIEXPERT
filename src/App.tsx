@@ -16765,9 +16765,9 @@ Ejemplo:
                   <span>💡</span> PROCESO DE COMPARTIDO RECOMENDADO (30 SEGUNDOS):
                 </div>
                 <ol className="list-decimal list-inside space-y-1 text-slate-300 font-medium">
-                  <li>Haz clic en los botones del <span className="text-indigo-400 font-bold">PASO 2</span> para descargar los archivos PDF que quieras enviar.</li>
-                  <li>Haz clic en <span className="text-emerald-400 font-bold">Lanzar Chat de WhatsApp</span>. Esto abrirá el chat con el paciente y cargará el texto explicativo.</li>
-                  <li>Simplemente arrastra los archivos PDF descargados a la ventana del chat de WhatsApp y envíalos. <span className="text-indigo-300 font-semibold">¡Sencillo, profesional y 100% privado!</span></li>
+                  <li>En el <span className="text-indigo-400 font-bold">PASO 2</span> descarga los PDF y, si quieres, el <span className="text-emerald-400 font-bold">audio MP3</span> de la explicacion.</li>
+                  <li>Haz clic en <span className="text-emerald-400 font-bold">Lanzar Chat de WhatsApp</span>. Esto abrira el chat con el paciente y cargara el texto explicativo.</li>
+                  <li>Arrastra los PDF y/o el MP3 al chat de WhatsApp y envialos. <span className="text-indigo-300 font-semibold">Sencillo, profesional y 100% privado.</span></li>
                 </ol>
               </div>
             </div>
