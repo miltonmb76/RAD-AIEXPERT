@@ -239,3 +239,49 @@ export function stopPatientSummarySpeech(): void {
     }
   }
 }
+
+/**
+ * Request natural-voice MP3 from /api/patient-summary-tts and trigger a download.
+ * Shared by the patient module bar and the WhatsApp share modal.
+ */
+export async function downloadPatientSummaryAudioMp3(opts: {
+  script: string;
+  filename?: string;
+  includeFollowUp?: boolean;
+}): Promise<Blob> {
+  const script = String(opts.script || "").replace(/\s+/g, " ").trim();
+  if (!script) {
+    throw new Error("No hay guion de audio. Genere primero la explicación al paciente.");
+  }
+  const res = await fetch("/api/patient-summary-tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: script,
+      includeFollowUp: opts.includeFollowUp === true,
+    }),
+  });
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({} as any));
+    throw new Error(json?.error || "No se pudo generar el MP3.");
+  }
+  if (!contentType.includes("audio")) {
+    const json = await res.json().catch(() => ({} as any));
+    throw new Error(json?.error || "El servidor no devolvió audio.");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = opts.filename || "explicacion-paciente-whatsapp.mp3";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    // Keep URL briefly so the browser can start the download, then revoke.
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+  return blob;
+}

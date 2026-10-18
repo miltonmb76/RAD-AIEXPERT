@@ -3,6 +3,7 @@ import { Copy, Download, Loader2, MessageSquare, Volume2, VolumeX } from "lucide
 import {
   browserTtsSupported,
   buildPatientSummarySpokenScript,
+  downloadPatientSummaryAudioMp3,
   estimateSpokenSeconds,
   speakPatientSummaryScript,
   stopPatientSummarySpeech,
@@ -116,33 +117,13 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
     setIsDownloading(true);
     setError(null);
     try {
-      const res = await fetch("/api/patient-summary-tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: script,
-          includeFollowUp,
-        }),
+      const blob = await downloadPatientSummaryAudioMp3({
+        script,
+        includeFollowUp,
+        filename: "explicacion-paciente-whatsapp.mp3",
       });
-      const contentType = res.headers.get("content-type") || "";
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json?.error || "No se pudo generar el MP3.");
-      }
-      if (!contentType.includes("audio")) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json?.error || "El servidor no devolvió audio.");
-      }
-      const blob = await res.blob();
       if (mp3Url) URL.revokeObjectURL(mp3Url);
-      const url = URL.createObjectURL(blob);
-      setMp3Url(url);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "explicacion-paciente-whatsapp.mp3";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      setMp3Url(URL.createObjectURL(blob));
     } catch (e: any) {
       setError(
         e?.message ||

@@ -142,7 +142,8 @@ import {
   FileSpreadsheet,
   FileStack,
   MapPinned,
-  Anchor
+  Anchor,
+  Volume2,
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -214,6 +215,10 @@ import { createGmailSendAction } from "./lib/gmailSend";
 import { createDriveSaveAction } from "./lib/driveSave";
 import { buildWhatsAppTextPreview, buildWhatsAppSendUrl } from "./lib/whatsappShare";
 import { PatientSummaryAudioBar } from "./components/PatientSummaryAudioBar";
+import {
+  buildPatientSummarySpokenScript,
+  downloadPatientSummaryAudioMp3,
+} from "./lib/patientSummaryAudio";
 import { buildSettingsBackup, downloadSettingsBackupJson, createImportAllDataHandler } from "./lib/settingsBackup";
 import { createBatchModuleActivator } from "./lib/batchModuleActivator";
 import { createNativePdfDownload } from "./lib/nativePdfDownload";
@@ -1012,6 +1017,9 @@ export default function App() {
   const [whatsappPhone, setWhatsappPhone] = useState<string>(() => localStorage.getItem("rad_whatsapp_phone") || "");
   const [whatsappIncludePatientSummary, setWhatsappIncludePatientSummary] = useState<boolean>(true);
   const [whatsappIncludeOperationalSummary, setWhatsappIncludeOperationalSummary] = useState<boolean>(true);
+  const [whatsappAudioIncludeFollowUp, setWhatsappAudioIncludeFollowUp] = useState<boolean>(false);
+  const [isDownloadingWhatsappAudio, setIsDownloadingWhatsappAudio] = useState<boolean>(false);
+  const [whatsappAudioError, setWhatsappAudioError] = useState<string | null>(null);
   
   // Gmail Share States
   const [showGmailModal, setShowGmailModal] = useState<boolean>(false);
@@ -6071,6 +6079,42 @@ Ejemplo:
     return download(openInNewTab, shareViaWebShare, returnBase64, returnBlobUrl, studyOverride, returnRawBlob);
   };
 
+
+  const handleDownloadWhatsappPatientAudio = async () => {
+    if (!patientSummary) {
+      setWhatsappAudioError("Primero genera la explicación para el paciente.");
+      return;
+    }
+    setIsDownloadingWhatsappAudio(true);
+    setWhatsappAudioError(null);
+    try {
+      const followUpText = [
+        clinicalScorecardData?.categoryAssigned,
+        clinicalScorecardData?.recommendation,
+      ]
+        .map((s) => String(s || "").trim())
+        .filter(Boolean)
+        .join(". ");
+      const script = buildPatientSummarySpokenScript(patientSummary, {
+        includeFollowUp: whatsappAudioIncludeFollowUp,
+        followUpText: whatsappAudioIncludeFollowUp ? followUpText : "",
+        studyType: specificStudy || studyType,
+        patientFirstName: patientName,
+        maxWords: whatsappAudioIncludeFollowUp ? 125 : 110,
+      });
+      await downloadPatientSummaryAudioMp3({
+        script,
+        includeFollowUp: whatsappAudioIncludeFollowUp,
+        filename: "explicacion-paciente-whatsapp.mp3",
+      });
+    } catch (e: any) {
+      setWhatsappAudioError(
+        e?.message || "No se pudo descargar el audio. Verifique OPENAI_API_KEY."
+      );
+    } finally {
+      setIsDownloadingWhatsappAudio(false);
+    }
+  };
 
   const handleDownloadPatientSummaryPDF = async (
     openInNewTab: boolean = false,
@@ -16501,10 +16545,10 @@ Ejemplo:
                 </div>
               </div>
 
-              {/* PASO 2: DESCARGAR ARCHIVOS PDF */}
+              {/* PASO 2: DESCARGAR ARCHIVOS (PDF + AUDIO) */}
               <div className="space-y-2.5">
                 <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
-                  PASO 2: Descargar Documentos ClÃ­nicos (Para Adjuntar)
+                  PASO 2: Descargar documentos / audio (para adjuntar)
                 </h4>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -16544,7 +16588,70 @@ Ejemplo:
                       <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">AcompaÃ±amiento DidÃ¡ctico</span>
                     </div>
                   </button>
+
+                  {/* Download patient audio MP3 */}
+                  <button
+                    type="button"
+                    disabled={!patientSummary || isDownloadingWhatsappAudio}
+                    onClick={() => {
+                      void handleDownloadWhatsappPatientAudio();
+                    }}
+                    className={`p-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 select-none sm:col-span-2 ${
+                      patientSummary && !isDownloadingWhatsappAudio
+                        ? "bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-500/40 text-emerald-100 cursor-pointer"
+                        : "bg-slate-950/20 border-slate-900 text-slate-500 cursor-not-allowed"
+                    }`}
+                    title={
+                      patientSummary
+                        ? "Descargar audio MP3 (voz natural) de la explicación al paciente para adjuntar en WhatsApp"
+                        : "Primero genera la explicación para el paciente"
+                    }
+                  >
+                    {isDownloadingWhatsappAudio ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                    ) : (
+                      <Volume2 className="h-4 w-4 text-emerald-400" />
+                    )}
+                    <div className="text-left flex-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider block">
+                        {isDownloadingWhatsappAudio ? "Generando audio?" : "3. Audio explicación (MP3)"}
+                      </span>
+                      <span className="text-[8.5px] text-slate-400 font-mono leading-none block uppercase">
+                        Voz natural · 30?45 s · sin tratamiento por defecto
+                      </span>
+                    </div>
+                  </button>
                 </div>
+
+                <label
+                  className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all select-none ${
+                    !patientSummary
+                      ? "bg-slate-950/20 border-slate-900 text-slate-600 cursor-not-allowed"
+                      : whatsappAudioIncludeFollowUp
+                        ? "bg-emerald-950/20 border-emerald-900/60 text-emerald-200 cursor-pointer"
+                        : "bg-slate-950/40 border-slate-850 text-slate-400 hover:border-slate-800 cursor-pointer"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!patientSummary}
+                    checked={!!patientSummary && whatsappAudioIncludeFollowUp}
+                    onChange={(e) => setWhatsappAudioIncludeFollowUp(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-800 text-emerald-600 focus:ring-emerald-600 h-3.5 w-3.5 bg-slate-950"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-[10.5px] font-black uppercase tracking-wider block">
+                      Incluir seguimiento en el audio (BI-RADS, TI-RADS?)
+                    </span>
+                    <span className="text-[9px] text-slate-400 leading-normal block">
+                      Apagado por defecto: solo explica hallazgos. Actívelo si quiere mencionar control/categoría del scorecard.
+                    </span>
+                  </div>
+                </label>
+
+                {whatsappAudioError ? (
+                  <p className="text-[10px] text-amber-300/90 leading-snug">{whatsappAudioError}</p>
+                ) : null}
 
                 <button
                   type="button"
