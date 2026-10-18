@@ -1,0 +1,22 @@
+================================================================================
+CLOUD SHELL — Suites + Atlas + Scorecard con banda Pack (PASO A PASO)
+Si la consola se sale, NO pegues todo junto. Ejecuta BLOQUE 1, espera, luego 2.
+================================================================================
+
+--- BLOQUE 1 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert" 2>/dev/null || (git clone https://github.com/miltonmb76/RAD-AIEXPERT.git "$HOME/rad-ai-expert-deploy" && cd "$HOME/rad-ai-expert-deploy")
+git fetch origin cursor/annex-suites-pack-chrome-0681
+git checkout -B cursor/annex-suites-pack-chrome-0681 origin/cursor/annex-suites-pack-chrome-0681
+git reset --hard origin/cursor/annex-suites-pack-chrome-0681
+git rev-parse --short HEAD
+grep -q 'drawPackAnnexHeaderBand' src/utils/abdomen3dPdfRenderer.ts && echo "OK suite" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/atlas3dPdfRenderer.ts && echo "OK atlas" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/scorecardPdfRenderer.ts && echo "OK scorecard" || echo "ERROR"
+
+--- BLOQUE 2 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"
+SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
+gcloud secrets describe openai-api-key >/dev/null 2>&1 && SECRETS="${SECRETS},OPENAI_API_KEY=openai-api-key:latest"
+gcloud run deploy rad-ai-expert --source . --region us-central1 --update-secrets="$SECRETS" 2>&1 | tee ~/deploy_annex_suites.log
+echo "Deploy termino: $?"
+gcloud run services describe rad-ai-expert --region us-central1 --format='value(status.url)'

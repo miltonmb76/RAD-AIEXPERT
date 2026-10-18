@@ -3,6 +3,9 @@ import { criterionStatusLabel, criterionWeightLabel, scorecardTrafficLabel } fro
 
 import { sanitizePdfText } from "./sanitizePdfText";
 
+import {
+  drawPackAnnexHeaderBand,
+} from "./pdfAnnexChrome";
 /**
  * Larger, page-filling scorecard annex.
  * Prefers a single page; the final synthesis box may jump if content is tall.
@@ -36,20 +39,14 @@ export function renderScorecardAnnexToPDF(
   const headerH = 8.5 * factor;
 
   doc.addPage();
-  // Keep clear of global running header line at y=14 (large title ascent would otherwise collide).
-  const contentTop = 26 * factor;
-  let y = contentTop;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(fsTitle);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SCORECARD DE CRITERIOS CLINICOS", marginX, y);
-  y += 5.5 * factor;
-
-  doc.setDrawColor(20, 184, 166);
-  doc.setLineWidth(0.9);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 7 * factor;
+  let y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: 20 * factor,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: SCORECARD DE CRITERIOS CLINICOS",
+    afterGap: 7 * factor,
+  });
 
   const dxTitle =
     String(scorecard.finalDiagnosis || "").trim() ||
