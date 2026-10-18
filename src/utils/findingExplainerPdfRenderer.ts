@@ -4,6 +4,11 @@ import {
   shortExplainerRotulo,
 } from "../lib/findingExplainer";
 import { sanitizePdfText } from "./sanitizePdfText";
+import {
+  drawPackAnnexHeaderBand,
+  fitPdfTextToWidth,
+  PACK_ANNEX_COLORS,
+} from "./pdfAnnexChrome";
 
 function imageRatio(doc: any, dataUrl: string, fallback = 4 / 3): number {
   try {
@@ -70,61 +75,24 @@ export async function renderFindingExplainerAnnexToPDF(
   const cardsPerPage = 2;
 
   doc.addPage();
+  // Clear of running header; same top margin as Pack / Eco-3D
   let y = 20 * factor;
 
-  // ── Pack-style annex header band (page 1 only) ────────────────────────
+  // ── Pack-style annex header band (page 1 only; shared chrome) ─────────
   const rawTitle = sanitizePdfText(data?.title || "EXPLAINER DE HALLAZGOS");
-  const titleLeft = rawTitle.toUpperCase().startsWith("ANEXO")
-    ? rawTitle
-    : `ANEXO: ${rawTitle}`;
-  const metaRaw = data?.studyRegion
-    ? sanitizePdfText(String(data.studyRegion))
-    : "";
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10 * factor);
-  const titleW = Math.min(doc.getTextWidth(titleLeft) + 2, contentWidth * 0.62);
-  const metaMaxW = Math.max(24, contentWidth - titleW - 14);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5 * factor);
-  const metaLines: string[] = metaRaw
-    ? (doc.splitTextToSize(metaRaw, metaMaxW) as string[]).slice(0, 2)
+  const metaParts = data?.studyRegion
+    ? [sanitizePdfText(String(data.studyRegion))]
     : [];
-
-  const headerPadY = 3.4 * factor;
-  const titleLineH = 4.4 * factor;
-  const metaLineH = 3.5 * factor;
-  const headerInnerH = Math.max(
-    titleLineH,
-    metaLines.length ? metaLines.length * metaLineH : 0
-  );
-  const annexHeaderH = headerPadY * 2 + headerInnerH;
-
-  doc.setFillColor(41, 37, 36);
-  doc.roundedRect(marginX, y, contentWidth, annexHeaderH, 1.5, 1.5, "F");
-  doc.setFillColor(217, 119, 6);
-  doc.rect(marginX, y + annexHeaderH, contentWidth, 1.15 * factor, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10 * factor);
-  doc.setTextColor(255, 251, 235);
-  doc.text(titleLeft, marginX + 4 * factor, y + headerPadY + titleLineH * 0.78);
-
-  if (metaLines.length) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5 * factor);
-    doc.setTextColor(253, 230, 138);
-    metaLines.forEach((line, i) => {
-      doc.text(
-        line,
-        marginX + contentWidth - 4 * factor,
-        y + headerPadY + metaLineH * (i + 0.78),
-        { align: "right" }
-      );
-    });
-  }
-
-  y += annexHeaderH + 1.15 * factor + 6.5 * factor;
+  y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y,
+    width: contentWidth,
+    factor,
+    title: rawTitle,
+    metaLines: metaParts,
+    // Slightly tighter than Pack so 2 cards/page budget stays intact
+    afterGap: 6.5 * factor,
+  });
   const page1CardsTop = y;
 
   const gap = 5 * factor;
@@ -214,16 +182,28 @@ export async function renderFindingExplainerAnnexToPDF(
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5 * factor);
-    doc.setTextColor(180, 83, 9);
-    doc.text(`HALLAZGO ${index + 1}`, marginX, cy);
+    doc.setTextColor(
+      PACK_ANNEX_COLORS.sectionLabel[0],
+      PACK_ANNEX_COLORS.sectionLabel[1],
+      PACK_ANNEX_COLORS.sectionLabel[2]
+    );
+    doc.text(
+      fitPdfTextToWidth(doc, `HALLAZGO ${index + 1}`, contentWidth),
+      marginX,
+      cy
+    );
     cy += 5 * factor;
 
     const labelLineH = (p.labelSize * 0.42 + 1.15) * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(p.labelSize * factor);
-    doc.setTextColor(28, 25, 23);
+    doc.setTextColor(
+      PACK_ANNEX_COLORS.bodyText[0],
+      PACK_ANNEX_COLORS.bodyText[1],
+      PACK_ANNEX_COLORS.bodyText[2]
+    );
     p.labelLines.forEach((line) => {
-      doc.text(line, marginX, cy);
+      doc.text(fitPdfTextToWidth(doc, line, contentWidth), marginX, cy);
       cy += labelLineH;
     });
     cy += 1.2 * factor;
@@ -232,7 +212,7 @@ export async function renderFindingExplainerAnnexToPDF(
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8 * factor);
       doc.setTextColor(120, 113, 108);
-      doc.text(p.siteLine, marginX, cy);
+      doc.text(fitPdfTextToWidth(doc, p.siteLine, contentWidth), marginX, cy);
       cy += 4 * factor;
     }
 
@@ -250,8 +230,12 @@ export async function renderFindingExplainerAnnexToPDF(
     ) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.2 * factor);
-      doc.setTextColor(180, 83, 9);
-      doc.text(badge, x, cy + 2.2 * factor);
+      doc.setTextColor(
+        PACK_ANNEX_COLORS.sectionLabel[0],
+        PACK_ANNEX_COLORS.sectionLabel[1],
+        PACK_ANNEX_COLORS.sectionLabel[2]
+      );
+      doc.text(fitPdfTextToWidth(doc, badge, innerW + framePad * 2), x, cy + 2.2 * factor);
 
       const boxY = cy + badgeH;
       const drawW = innerW;
@@ -276,9 +260,8 @@ export async function renderFindingExplainerAnnexToPDF(
       doc.setFont("helvetica", "italic");
       doc.setFontSize(6.3 * factor);
       doc.setTextColor(100, 116, 139);
-      const cap = sanitizePdfText(caption || "");
-      const capLines = doc.splitTextToSize(cap, boxW) as string[];
-      doc.text(capLines[0] || "", x, boxY + boxH + 3 * factor);
+      const cap = fitPdfTextToWidth(doc, sanitizePdfText(caption || ""), boxW);
+      doc.text(cap, x, boxY + boxH + 3 * factor);
       return boxY + boxH + captionH;
     };
 
