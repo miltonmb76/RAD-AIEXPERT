@@ -153,13 +153,23 @@ glossary (array de objetos con term, plainDefinition).`,
   return { data, model };
 }
 
+/** Default delivery style for patient WhatsApp audio (gpt-4o-mini-tts only). */
+export const PATIENT_TTS_INSTRUCTIONS =
+  "Habla en español latinoamericano con voz cálida, clara y profesional. " +
+  "Ritmo calmado de explicación clínica breve (como un radiólogo que resume hallazgos al paciente). " +
+  "Sin dramatismo ni tono publicitario. Pronuncia bien términos médicos en español. " +
+  "Pausas naturales entre oraciones.";
+
 /**
  * OpenAI TTS for patient WhatsApp audio (mp3).
+ * Defaults to gpt-4o-mini-tts + marin (more natural than browser / tts-1).
  * Caller must already have built a short spoken script (no treatment unless opted in).
  */
 export async function synthesizePatientSummarySpeech(args: {
   text: string;
   voice?: string;
+  /** Style instructions — ignored by tts-1 / tts-1-hd. */
+  instructions?: string;
 }): Promise<{ buffer: Buffer; model: string; voice: string }> {
   const apiKey = cleanOpenAiKey(process.env.OPENAI_API_KEY || "");
   if (!apiKey) {
@@ -173,15 +183,26 @@ export async function synthesizePatientSummarySpeech(args: {
   if (text.length > 4000) {
     throw new Error("El guion de audio supera el límite permitido.");
   }
-  const model = (process.env.OPENAI_TTS_MODEL || "tts-1").trim() || "tts-1";
-  const voice = (args.voice || process.env.OPENAI_TTS_VOICE || "nova").trim() || "nova";
+  const model =
+    (process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts").trim() || "gpt-4o-mini-tts";
+  const voice = (args.voice || process.env.OPENAI_TTS_VOICE || "marin").trim() || "marin";
+  const instructions = String(
+    args.instructions || process.env.OPENAI_TTS_INSTRUCTIONS || PATIENT_TTS_INSTRUCTIONS
+  ).trim();
   const openai = new OpenAI({ apiKey });
-  const speech = await openai.audio.speech.create({
+
+  const request: Record<string, unknown> = {
     model,
     voice: voice as any,
     input: text,
     response_format: "mp3",
-  });
+  };
+  // Steerability (accent/tone) only on gpt-4o-mini-tts family — not tts-1 / tts-1-hd.
+  if (instructions && !/^tts-1/i.test(model)) {
+    request.instructions = instructions;
+  }
+
+  const speech = await openai.audio.speech.create(request as any);
   const arrayBuffer = await speech.arrayBuffer();
   return { buffer: Buffer.from(arrayBuffer), model, voice };
 }

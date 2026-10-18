@@ -13,6 +13,8 @@ grep -q 'PatientSummaryAudioBar' src/App.tsx && echo "OK ui" || echo "ERROR"
 grep -q 'buildPatientSummarySpokenScript' src/lib/patientSummaryAudio.ts && echo "OK script" || echo "ERROR"
 grep -q 'patient-summary-tts' server.ts && echo "OK api" || echo "ERROR"
 grep -q 'Incluir seguimiento' src/components/PatientSummaryAudioBar.tsx && echo "OK opt-in" || echo "ERROR"
+grep -q 'gpt-4o-mini-tts' src/lib/openaiPatientSummary.ts && echo "OK tts natural" || echo "ERROR"
+grep -q 'marin' src/lib/openaiPatientSummary.ts && echo "OK voice marin" || echo "ERROR"
 
 --- BLOQUE 2 (copiar y Enter) ---
 cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"

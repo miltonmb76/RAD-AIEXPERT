@@ -231,14 +231,14 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
           onClick={handleDownloadMp3}
           disabled={isDownloading || !script}
           className="text-[9px] font-black text-slate-100 border border-slate-600 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 bg-slate-900 disabled:opacity-50"
-          title="Requiere OPENAI_API_KEY en el servidor. Si falla, use Escuchar o Copiar guion."
+          title="Voz natural OpenAI (gpt-4o-mini-tts). Requiere OPENAI_API_KEY. Si falla, use Escuchar o Copiar guion."
         >
           {isDownloading ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             <Download className="h-3 w-3" />
           )}
-          Descargar MP3
+          Descargar MP3 (voz natural)
         </button>
         <button
           type="button"
@@ -255,8 +255,8 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p>
       ) : (
         <p className="text-[9px] text-slate-500 leading-snug">
-          Tip: descargue el MP3 y adjúntelo en el chat de WhatsApp. El botón WhatsApp pega el
-          guion; el archivo de audio se adjunta a mano.
+          Tip: «Escuchar» usa la voz del navegador (más robótica). «Descargar MP3» usa voz
+          natural OpenAI — adjúntelo en WhatsApp; el botón WhatsApp solo pega el guion.
         </p>
       )}
 
