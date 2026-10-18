@@ -4,6 +4,10 @@ import {
   type DiagnosticPackImageSlot,
 } from "../lib/diagnosticPack";
 import { sanitizePdfText } from "./sanitizePdfText";
+import {
+  drawPackAnnexHeaderBand,
+  drawPackAnnexSectionLabel,
+} from "./pdfAnnexChrome";
 
 function imageRatio(doc: any, dataUrl: string, fallback = 4 / 3): number {
   try {
@@ -75,68 +79,34 @@ export async function renderDiagnosticPackAnnexToPDF(
   doc.addPage();
   let y = marginTop;
 
-  // Header band — title left, meta right (never overlapping)
+  // Header band — Pack chrome (title left, meta right; clipped inside band)
   const multi =
     typeof options?.annexTotal === "number" &&
     options.annexTotal > 1 &&
     typeof options?.annexIndex === "number"
       ? ` (${options.annexIndex}/${options.annexTotal})`
       : "";
-  const titleLeft = `ANEXO: PACK DE JUSTIFICACIÓN DIAGNÓSTICA${multi}`;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  const titleW = Math.min(doc.getTextWidth(titleLeft) + 2, contentWidth * 0.58);
-  const metaMaxW = Math.max(24, contentWidth - titleW - 14);
-  const metaRaw = [pack.categoryLabel, pack.studyRegion]
+  const metaParts = [pack.categoryLabel, pack.studyRegion]
     .filter(Boolean)
-    .map((s) => sanitizePdfText(String(s)))
-    .join("  ·  ");
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  let metaLines: string[] = metaRaw
-    ? (doc.splitTextToSize(metaRaw, metaMaxW) as string[]).slice(0, 2)
-    : [];
-  const headerPadY = 3.2;
-  const titleLineH = 4.2;
-  const metaLineH = 3.4;
-  const headerInnerH = Math.max(
-    titleLineH,
-    metaLines.length ? metaLines.length * metaLineH : 0
-  );
-  const headerH = headerPadY * 2 + headerInnerH;
-
-  doc.setFillColor(41, 37, 36);
-  doc.roundedRect(marginX, y, contentWidth, headerH, 1.5, 1.5, "F");
-  doc.setFillColor(217, 119, 6);
-  doc.rect(marginX, y + headerH, contentWidth, 1.1, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(255, 251, 235);
-  doc.text(titleLeft, marginX + 4, y + headerPadY + titleLineH * 0.78);
-
-  if (metaLines.length) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(253, 230, 138);
-    metaLines.forEach((line, i) => {
-      doc.text(
-        line,
-        marginX + contentWidth - 4,
-        y + headerPadY + metaLineH * (i + 0.78),
-        { align: "right" }
-      );
-    });
-  }
-
-  y += headerH + 1.1 + 7;
+    .map((s) => sanitizePdfText(String(s)));
+  y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y,
+    width: contentWidth,
+    factor: 1,
+    title: `ANEXO: PACK DE JUSTIFICACIÓN DIAGNÓSTICA${multi}`,
+    metaLines: metaParts,
+    afterGap: 7,
+  });
 
   // Ancla
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.setTextColor(180, 83, 9);
-  doc.text("DIAGNÓSTICO ANCLA", marginX, y);
-  y += 5.5;
+  y = drawPackAnnexSectionLabel(doc, {
+    text: "DIAGNÓSTICO ANCLA",
+    x: marginX,
+    y,
+    factor: 1,
+    maxWidth: contentWidth,
+  });
 
   // Font size MUST be set before splitTextToSize (jsPDF uses current font metrics)
   const dx = sanitizePdfText(pack.diagnosis);

@@ -7,6 +7,10 @@ import {
 } from "../lib/usPlaneBridge";
 import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 import { sanitizePdfText } from "./sanitizePdfText";
+import {
+  drawPackAnnexHeaderBand,
+  drawPackAnnexSectionLabel,
+} from "./pdfAnnexChrome";
 
 function imageRatio(doc: any, dataUrl: string): number {
   try {
@@ -64,66 +68,32 @@ export function renderUsPlaneSimulatorAnnexToPDF(
   // Clear of running header + gray rule (~15.5)
   let y = 20 * factor;
 
-  // ── Header band (Pack style) ─────────────────────────────────────────────
-  const titleLeft = "ANEXO: CORRELACIÓN ECO-ANATÓMICA 3D";
-  const metaRaw = [
+  // ── Header band (Pack style, shared chrome) ──────────────────────────────
+  const metaParts = [
     data.planeLabelEs || data.acquisitionPlane,
     data.detectedLaterality,
     data.lesionTarget || data.targetStructure,
   ]
     .filter(Boolean)
-    .map((s) => sanitizePdfText(String(s)))
-    .join("  ·  ");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9 * factor);
-  const titleW = Math.min(doc.getTextWidth(titleLeft) + 2, contentWidth * 0.58);
-  const metaMaxW = Math.max(24, contentWidth - titleW - 14);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7 * factor);
-  const metaLines: string[] = metaRaw
-    ? (doc.splitTextToSize(metaRaw, metaMaxW) as string[]).slice(0, 2)
-    : [];
-  const headerPadY = 3.2 * factor;
-  const titleLineH = 4.2 * factor;
-  const metaLineH = 3.4 * factor;
-  const headerInnerH = Math.max(
-    titleLineH,
-    metaLines.length ? metaLines.length * metaLineH : 0
-  );
-  const headerH = headerPadY * 2 + headerInnerH;
-
-  doc.setFillColor(41, 37, 36);
-  doc.roundedRect(marginX, y, contentWidth, headerH, 1.5, 1.5, "F");
-  doc.setFillColor(217, 119, 6);
-  doc.rect(marginX, y + headerH, contentWidth, 1.1 * factor, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9 * factor);
-  doc.setTextColor(255, 251, 235);
-  doc.text(titleLeft, marginX + 4 * factor, y + headerPadY + titleLineH * 0.78);
-
-  if (metaLines.length) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7 * factor);
-    doc.setTextColor(253, 230, 138);
-    metaLines.forEach((line, i) => {
-      doc.text(
-        line,
-        marginX + contentWidth - 4 * factor,
-        y + headerPadY + metaLineH * (i + 0.78),
-        { align: "right" }
-      );
-    });
-  }
-  y += headerH + 1.1 * factor + 7 * factor;
+    .map((s) => sanitizePdfText(String(s)));
+  y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: CORRELACIÓN ECO-ANATÓMICA 3D",
+    metaLines: metaParts,
+    afterGap: 7 * factor,
+  });
 
   // ── Anchor title ─────────────────────────────────────────────────────────
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5 * factor);
-  doc.setTextColor(180, 83, 9);
-  doc.text("HALLAZGO / PLANO", marginX, y);
-  y += 5.5 * factor;
+  y = drawPackAnnexSectionLabel(doc, {
+    text: "HALLAZGO / PLANO",
+    x: marginX,
+    y,
+    factor,
+    maxWidth: contentWidth,
+  });
 
   const figTitle = sanitizePdfText(
     data.figureTitle ||

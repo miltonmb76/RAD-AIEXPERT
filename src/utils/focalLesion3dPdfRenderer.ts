@@ -2,7 +2,14 @@ import { FocalLesion3DData } from "../types";
 import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
-import { ANNEX_CAPTION_GAP } from "./pdfAnnexChrome";
+import {
+  ANNEX_CAPTION_GAP,
+  drawAnnexPanelBadge,
+  drawPackAnnexHeaderBand,
+  drawPackAnnexSectionLabel,
+  fitPdfTextToWidth,
+  PACK_ANNEX_COLORS,
+} from "./pdfAnnexChrome";
 import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 import { focalPlaneBadge } from "../lib/focalPlanePair";
 
@@ -31,44 +38,63 @@ export function renderFocalLesion3DAnnexToPDF(
   const pageBottom = pageHeight - bottomMargin;
 
   doc.addPage();
-  // Start below the global running header line drawn at y=14 on pages 2+
-  let y = 22 * factor;
+  // Same top clearance as Pack / Eco-3D / Explainer (running header ~15.5)
+  let y = 20 * factor;
 
-  // --- Header ---
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: CORTE FOCAL 3D DE LA LESIÓN", marginX, y);
-  y += 4.5 * factor;
-
-  doc.setDrawColor(13, 148, 136);
-  doc.setLineWidth(0.7);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 5.5 * factor;
-
-  const figTitle =
-    data.figureTitle ||
-    `FIGURA. DETALLE 3D DEL HALLAZGO: ${(data.lesionLabel || "LESIÓN FOCAL").toUpperCase()}`;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10 * factor);
-  const figTitleLines = doc.splitTextToSize(figTitle, contentWidth - 12 * factor).slice(0, 2);
-  const figLineH = 3.7 * factor;
-  const bannerH = Math.max(7.2 * factor, figTitleLines.length * figLineH + 3.2 * factor);
-
-  doc.setFillColor(240, 253, 250);
-  doc.setDrawColor(153, 246, 228);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(marginX, y, contentWidth, bannerH, 1.6, 1.6, "FD");
-  doc.setFillColor(13, 148, 136);
-  doc.rect(marginX, y, 2.6 * factor, bannerH, "F");
-
-  doc.setTextColor(30, 41, 59);
-  let titleY = y + 4 * factor;
-  figTitleLines.forEach((line: string) => {
-    doc.text(line, marginX + 6 * factor, titleY);
-    titleY += figLineH;
+  // --- Pack-style header band ---
+  const metaParts = [
+    data.lesionLabel,
+    data.detectedLaterality,
+    data.studyRegion,
+  ]
+    .filter(Boolean)
+    .map((s) => sanitizePdfText(String(s)));
+  y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: CORTE FOCAL 3D DE LA LESIÓN",
+    metaLines: metaParts,
+    afterGap: 6 * factor,
   });
-  y += bannerH + 2.4 * factor;
+
+  y = drawPackAnnexSectionLabel(doc, {
+    text: "HALLAZGO FOCAL",
+    x: marginX,
+    y,
+    factor,
+    maxWidth: contentWidth,
+  });
+
+  const figTitle = sanitizePdfText(
+    pdfCutawayToCorte(
+      data.figureTitle ||
+        `FIGURA. DETALLE 3D DEL HALLAZGO: ${(data.lesionLabel || "LESIÓN FOCAL").toUpperCase()}`
+    )
+  );
+  doc.setFont("helvetica", "bold");
+  let figSize = figTitle.length > 90 ? 11.5 : figTitle.length > 60 ? 12.5 : 13.5;
+  doc.setFontSize(figSize * factor);
+  let figTitleLines = doc.splitTextToSize(figTitle, contentWidth) as string[];
+  if (figTitleLines.length > 2 && figSize > 11) {
+    figSize = 11;
+    doc.setFontSize(figSize * factor);
+    figTitleLines = (doc.splitTextToSize(figTitle, contentWidth) as string[]).slice(0, 2);
+  } else {
+    figTitleLines = figTitleLines.slice(0, 2);
+  }
+  const figLineH = figSize * 0.42 * factor + 1.1 * factor;
+  doc.setTextColor(
+    PACK_ANNEX_COLORS.bodyText[0],
+    PACK_ANNEX_COLORS.bodyText[1],
+    PACK_ANNEX_COLORS.bodyText[2]
+  );
+  figTitleLines.forEach((line: string) => {
+    doc.text(fitPdfTextToWidth(doc, line, contentWidth), marginX, y);
+    y += figLineH;
+  });
+  y += 2 * factor;
 
   // --- Meta chips ---
   const metaChips: { label: string; value: string }[] = [
@@ -316,28 +342,29 @@ export function renderFocalLesion3DAnnexToPDF(
 
     const roleTag = focalPlaneBadge(p).toUpperCase();
     const badgeLabel = `PANEL ${p.panelLetter} · ${roleTag}`;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.2 * factor);
-    const badgePadX = 1.5 * factor;
-    const badgeW = Math.min(
-      imgW - 2.4 * factor,
-      Math.max(18 * factor, doc.getTextWidth(badgeLabel) + badgePadX * 2)
-    );
-    const badgeH = 4.2 * factor;
-    doc.setFillColor(13, 148, 136);
-    doc.roundedRect(imgX + 1.2, imgY + 1.2, badgeW, badgeH, 0.7, 0.7, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.text(badgeLabel, imgX + 1.2 + badgePadX, imgY + 1.2 + 2.9);
+    drawAnnexPanelBadge(doc, {
+      label: badgeLabel,
+      x: imgX + 1.2 * factor,
+      y: imgY + 1.2 * factor,
+      factor,
+      accent: [13, 148, 136],
+      maxWidth: imgW - 2.4 * factor,
+      fontSize: 6.2 * factor,
+    });
 
     let textY = imgY + imgH + captionGap;
+    const captionMaxW = panelWidth - 4 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.6 * factor);
     doc.setTextColor(15, 23, 42);
     const titleLines = doc
-      .splitTextToSize(pdfCutawayToCorte(`${p.panelLetter}. ${p.panelTitle || ""}`), panelWidth - 4 * factor)
+      .splitTextToSize(
+        pdfCutawayToCorte(`${p.panelLetter}. ${p.panelTitle || ""}`),
+        captionMaxW
+      )
       .slice(0, 2);
     titleLines.forEach((line: string) => {
-      doc.text(line, imgX + 0.4, textY);
+      doc.text(fitPdfTextToWidth(doc, line, captionMaxW), imgX + 0.4, textY);
       textY += 2.8 * factor;
     });
     if (p.anatomicalFocus?.trim()) {
@@ -346,10 +373,10 @@ export function renderFocalLesion3DAnnexToPDF(
       doc.setFontSize(6.8 * factor);
       doc.setTextColor(71, 85, 105);
       const desc = doc
-        .splitTextToSize(pdfCutawayToCorte(p.anatomicalFocus.trim()), panelWidth - 4 * factor)
+        .splitTextToSize(pdfCutawayToCorte(p.anatomicalFocus.trim()), captionMaxW)
         .slice(0, 2);
       desc.forEach((line: string) => {
-        doc.text(line, imgX + 0.4, textY);
+        doc.text(fitPdfTextToWidth(doc, line, captionMaxW), imgX + 0.4, textY);
         textY += 2.45 * factor;
       });
     }
