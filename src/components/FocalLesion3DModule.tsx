@@ -63,7 +63,8 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
   const [customDirectives, setCustomDirectives] = useState("");
   const [focusMode, setFocusMode] = useState<"auto" | "manual">("auto");
   const [focusText, setFocusText] = useState("");
-  const [includeMacroPanel, setIncludeMacroPanel] = useState(true);
+  /** Opt-in: coherent orthogonal plane pair (coronal+sagittal…). Off = classic context+macro. */
+  const [orthogonalPlanes, setOrthogonalPlanes] = useState(false);
   const [selectedLaterality, setSelectedLaterality] = useState(() =>
     laterality && laterality.trim() ? laterality.trim() : "auto"
   );
@@ -111,9 +112,9 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
         setTimeout(
           () =>
             setGenerationStep(
-              includeMacroPanel
+              orthogonalPlanes
                 ? "Renderizando plano A, luego plano B anclado a la misma lesión..."
-                : "Renderizando plano focal con fidelidad Atlas..."
+                : "Renderizando contexto + macro (vistas a elección de la IA)..."
             ),
           2000
         )
@@ -122,7 +123,9 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
         setTimeout(
           () =>
             setGenerationStep(
-              "Verificando lateralidad, coherencia entre planos y morfología..."
+              orthogonalPlanes
+                ? "Verificando lateralidad, coherencia entre planos y morfología..."
+                : "Verificando lateralidad, sitio y morfología (auto-corrección)..."
             ),
           8000
         )
@@ -140,7 +143,8 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
             customDirectives: mergedDirectives || undefined,
             focusMode,
             focusText: focusMode === "manual" ? focusText.trim() : undefined,
-            includeMacroPanel
+            includeMacroPanel: true,
+            orthogonalPlanes,
           })
         });
         const resData = await response.json();
@@ -281,13 +285,14 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
     try {
       const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData || null);
       const letter = String(panel.panelLetter || "").toUpperCase();
-      // When regenerating B, pass A as CGI sibling reference for lesion identity.
+      const isOrtho =
+        panel.panelRole === "plane_a" || panel.panelRole === "plane_b";
+      // Orthogonal B regenerates with A as CGI sibling reference.
       const siblingRef =
-        letter === "B"
-          ? focalData.panels.find((p) => String(p.panelLetter).toUpperCase() === "A")?.imageUrl
-          : letter === "A"
-            ? focalData.panels.find((p) => String(p.panelLetter).toUpperCase() === "B")?.imageUrl
-            : undefined;
+        isOrtho && letter === "B"
+          ? focalData.panels.find((p) => String(p.panelLetter).toUpperCase() === "A")
+              ?.imageUrl
+          : undefined;
       const response = await fetch("/api/regenerate-focal-lesion-panel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -302,8 +307,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
           lesionLabel: focalData.lesionLabel,
           lesionSite: focalData.lesionSite,
           lesionMorphology: focalData.lesionMorphology,
-          // Prefer A→B anchor; for A regen, optional B ref is weaker but still helps identity.
-          referenceImageUrl: letter === "B" ? siblingRef : undefined,
+          referenceImageUrl: siblingRef,
         })
       });
       const resData = await response.json();
@@ -342,7 +346,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-              Misma lesión en dos planos ortogonales (p. ej. coronal+sagital en hombro). Bajo demanda.
+              Por defecto: contexto + macro (IA). Opcional: planos ortogonales coherentes (p. ej. coronal+sagital).
             </p>
           </div>
         </div>
@@ -401,15 +405,18 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
               {opt.label}
             </button>
           ))}
-          <label className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer select-none">
+          <label
+            className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer select-none"
+            title="Desmarcado: 2 vistas clásicas (contexto + macro). Marcado: par ortogonal coherente (A→B)."
+          >
             <input
               type="checkbox"
-              checked={includeMacroPanel}
-              onChange={(e) => setIncludeMacroPanel(e.target.checked)}
+              checked={orthogonalPlanes}
+              onChange={(e) => setOrthogonalPlanes(e.target.checked)}
               className="rounded border-slate-700 text-teal-600 h-3.5 w-3.5 cursor-pointer"
             />
             <span className="text-[10px] font-bold text-slate-300 font-mono uppercase">
-              Segundo plano ortogonal
+              Planos ortogonales
             </span>
           </label>
         </div>
