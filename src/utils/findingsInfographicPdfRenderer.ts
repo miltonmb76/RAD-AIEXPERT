@@ -10,6 +10,7 @@ import {
   type InfographicScene,
 } from "../lib/findingsInfographic";
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 
 function escapeXml(s: string): string {
   return String(s || "")
@@ -345,22 +346,19 @@ export async function renderFindingsInfographicAnnexToPDF(
   doc.addPage();
 
   // Clear of running header ("ULTRASONIDO… / Pág. …") + separator line (~12–14 mm).
-  const topSafe = 22 * factor;
+  const topSafe = 20 * factor;
   const bottomSafe = 14 * factor;
 
-  // Annex chrome — same pattern as scorecard / reasoning: title + rule
-  let yChrome = topSafe;
   const annexTitle = sanitizePdfText(infographicAnnexTitle(view.contentMode, audience));
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text(annexTitle, marginX, yChrome);
-  yChrome += 5 * factor;
-
-  doc.setDrawColor(20, 184, 166);
-  doc.setLineWidth(0.85);
-  doc.line(marginX, yChrome, pageWidth - marginX, yChrome);
-  yChrome += 6 * factor;
+  const yChrome = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: topSafe,
+    width: contentWidth,
+    factor,
+    title: annexTitle,
+    metaLines: audience === "patient" ? ["Versión paciente"] : ["Versión clínica"],
+    afterGap: 5 * factor,
+  });
 
   const availH = Math.max(110, pageHeight - yChrome - bottomSafe);
 

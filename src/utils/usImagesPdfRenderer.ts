@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 import { UsImagesGridMode } from "../types";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 export interface UsImageItem {
   id: string;
@@ -114,30 +116,31 @@ export function renderUsImagesToPdf(
   const gapX = cols > 1 ? 6 : 0;
   const gapY = 6;
 
-  // Clear of global running header on pages 2+ (label ~10mm + gray rule 15.5mm).
-  // Baseline at 18mm was kissing that gray line (glyph ascent overlaps the rule).
-  const headerStartY = 22;
-  const headerLineY = headerStartY + 4;
-  const gridStartY = headerStartY + 9;
+  // Clear of global running header; Pack band height ≈ 12mm + afterGap.
+  const headerTopY = 20;
+  const estimatedGridStartY = headerTopY + 17;
   const bottomMargin = 18;
-  const maxAvailableHeightOnPage = pageHeight - gridStartY - bottomMargin;
+  const maxAvailableHeightOnPage = pageHeight - estimatedGridStartY - bottomMargin;
   // Hard ceiling per card so multi-row pages never overflow the page
   const maxCardH =
     (maxAvailableHeightOnPage - (maxRowsPerPage - 1) * gapY) / maxRowsPerPage;
 
-  const renderPageHeader = (isContinuation = false) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10.5 * factor);
-    doc.setTextColor(15, 23, 42);
-
+  const renderPageHeader = (isContinuation = false): number => {
     const titleText = isContinuation
       ? "ANEXO: IMÁGENES Y CAPTURAS DE ULTRASONIDO (CONTINUACIÓN)"
       : "ANEXO: IMÁGENES Y CAPTURAS DE ULTRASONIDO";
-    doc.text(titleText, marginX, headerStartY);
-
-    doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.4);
-    doc.line(marginX, headerLineY, pageWidth - marginX, headerLineY);
+    const metaLines = options.studyTitle
+      ? [sanitizePdfText(String(options.studyTitle))]
+      : [];
+    return drawPackAnnexHeaderBand(doc, {
+      x: marginX,
+      y: headerTopY,
+      width: contentWidth,
+      factor,
+      title: titleText,
+      metaLines,
+      afterGap: 5 * factor,
+    });
   };
 
   // 2. Pre-calculate layout info for each image item
@@ -284,7 +287,7 @@ export function renderUsImagesToPdf(
   }
 
   // 4. Render rows with dynamic pagination and unified row heights
-  let currentY = gridStartY;
+  let currentY = estimatedGridStartY;
   let isFirstPage = true;
   let rowsOnCurrentPage = 0;
 
@@ -300,8 +303,7 @@ export function renderUsImagesToPdf(
 
     if (isFirstPage || needsNewPage) {
       doc.addPage();
-      renderPageHeader(!isFirstPage);
-      currentY = gridStartY;
+      currentY = renderPageHeader(!isFirstPage);
       rowsOnCurrentPage = 0;
       isFirstPage = false;
     }

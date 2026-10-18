@@ -1,0 +1,29 @@
+================================================================================
+CLOUD SHELL — Anexos restantes con banda Pack (PASO A PASO)
+Si la consola se sale, NO pegues todo junto. Ejecuta BLOQUE 1, espera, luego 2.
+================================================================================
+
+--- BLOQUE 1 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert" 2>/dev/null || (git clone https://github.com/miltonmb76/RAD-AIEXPERT.git "$HOME/rad-ai-expert-deploy" && cd "$HOME/rad-ai-expert-deploy")
+git fetch origin cursor/annex-remaining-pack-chrome-0681
+git checkout -B cursor/annex-remaining-pack-chrome-0681 origin/cursor/annex-remaining-pack-chrome-0681
+git reset --hard origin/cursor/annex-remaining-pack-chrome-0681
+git rev-parse --short HEAD
+grep -q 'drawPackAnnexHeaderBand' src/utils/usImagesPdfRenderer.ts && echo "OK us" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/mmgImagesPdfRenderer.ts && echo "OK mmg" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/elastographyPdfRenderer.ts && echo "OK elasto" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/reasoningChainPdfRenderer.ts && echo "OK reasoning" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/differentialTreePdfRenderer.ts && echo "OK differential" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/negativityChecklistPdfRenderer.ts && echo "OK negativity" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/measurementsGaugePdfRenderer.ts && echo "OK measures" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/findingsInfographicPdfRenderer.ts && echo "OK infographic" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/semioticsConductMatrixPdfRenderer.ts && echo "OK semiotics" || echo "ERROR"
+grep -q 'drawPackAnnexHeaderBand' src/utils/dominantLesionCardPdfRenderer.ts && echo "OK dominant" || echo "ERROR"
+
+--- BLOQUE 2 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"
+SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
+gcloud secrets describe openai-api-key >/dev/null 2>&1 && SECRETS="${SECRETS},OPENAI_API_KEY=openai-api-key:latest"
+gcloud run deploy rad-ai-expert --source . --region us-central1 --update-secrets="$SECRETS" 2>&1 | tee ~/deploy_annex_remaining.log
+echo "Deploy termino: $?"
+gcloud run services describe rad-ai-expert --region us-central1 --format='value(status.url)'

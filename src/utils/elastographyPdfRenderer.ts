@@ -1,4 +1,5 @@
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 import jsPDF from "jspdf";
 
 export interface ElastographyPdfData {
@@ -215,9 +216,28 @@ export function renderElastographyAnnexToPdf(
   const interpH = boxPadY + boxTitleH + interpWrapped.height + boxPadY;
   const techH = boxPadY + boxTitleH + techWrapped.height + boxPadY;
 
+  // ── Pack header first (actual height feeds the layout budget) ───────────
+  let y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: topY,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: EVALUACIÓN MULTIPARAMÉTRICA Y FUSIÓN 3D (ELASTOGRAFÍA & QUS)",
+    metaLines: data.etiology ? [sanitizePdfText(String(data.etiology))] : [],
+    afterGap: 4 * factor,
+  });
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(7.1 * factor);
+  doc.setTextColor(100, 116, 139);
+  const subtitle =
+    "Mapeo multiparamétrico no invasivo de rigidez acústica tisular y fracción grasa cuantitativa, con renderización 3D híbrida predictiva del estado macroscópico del parénquima hepático.";
+  const subLines = doc.splitTextToSize(subtitle, contentWidth);
+  doc.text(subLines, marginX, y);
+  y += subLines.length * 3.35 * factor + 3.2 * factor;
+
   // ── Layout budget: leftover space enlarges images + cards, not empty boxes ─
-  // Matches title + accent rule + subtitle block starting at topY (clears header rule).
-  const titleH = 16 * factor;
+  const titleH = y - topY;
   let scalesH = 29 * factor;
   let cardH = 32 * factor;
   let gap = 4.2 * factor;
@@ -242,34 +262,6 @@ export function renderElastographyAnnexToPdf(
     // Any leftover goes back to workstation (still within a soft max)
     workstationH = Math.min(wsMax + 4 * factor, workstationH + Math.max(0, surplus - toGaps * 4));
   }
-
-  let y = topY;
-
-  // ── TITLE ────────────────────────────────────────────────────────────────
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11.2 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text(
-    "ANEXO: EVALUACIÓN MULTIPARAMÉTRICA Y FUSIÓN 3D (ELASTOGRAFÍA & QUS)",
-    marginX,
-    y
-  );
-  // Extra gap so descenders / bold weight never sit on the accent rule
-  y += 5.2 * factor;
-
-  doc.setDrawColor(56, 189, 248);
-  doc.setLineWidth(0.5);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 4.5 * factor;
-
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(7.1 * factor);
-  doc.setTextColor(100, 116, 139);
-  const subtitle =
-    "Mapeo multiparamétrico no invasivo de rigidez acústica tisular y fracción grasa cuantitativa, con renderización 3D híbrida predictiva del estado macroscópico del parénquima hepático.";
-  const subLines = doc.splitTextToSize(subtitle, contentWidth);
-  doc.text(subLines, marginX, y);
-  y += subLines.length * 3.35 * factor + 3.2 * factor;
 
   // ── WORKSTATION ──────────────────────────────────────────────────────────
   const hasOriginal = !!data.originalImageBase64;

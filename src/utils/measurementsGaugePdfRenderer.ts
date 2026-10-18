@@ -1,6 +1,7 @@
 import { MeasurementGaugeData, MeasurementGaugeItem } from "../types";
 
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 
 function statusRgb(status: MeasurementGaugeItem["status"]): [number, number, number] {
   switch (status) {
@@ -56,25 +57,17 @@ export function renderMeasurementsGaugeAnnexToPDF(
   if (!rows.length) return;
 
   const pageBottom = pageHeight - 14 * factor;
+  const topY = 20 * factor;
   doc.addPage();
-  let y = 18 * factor;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: MEDICIONES CUANTITATIVAS vs RANGO", marginX, y);
-  y += 4.2 * factor;
-
-  doc.setDrawColor(37, 99, 235);
-  doc.setLineWidth(0.8);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 5.5 * factor;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9 * factor);
-  doc.setTextColor(30, 64, 175);
-  doc.text(sanitizePdfText(data.studyType || "Estudio detectado"), marginX, y);
-  y += 4 * factor;
+  let y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: topY,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: MEDICIONES CUANTITATIVAS vs RANGO",
+    metaLines: [sanitizePdfText(data.studyType || "Estudio detectado")],
+    afterGap: 5 * factor,
+  });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5 * factor);
@@ -99,12 +92,15 @@ export function renderMeasurementsGaugeAnnexToPDF(
     const rowBlockH = 16 * factor;
     if (y + rowBlockH > pageBottom) {
       doc.addPage();
-      y = 18 * factor;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10 * factor);
-      doc.setTextColor(15, 23, 42);
-      doc.text("ANEXO: MEDICIONES (continuacion)", marginX, y);
-      y += 6 * factor;
+      y = drawPackAnnexHeaderBand(doc, {
+        x: marginX,
+        y: topY,
+        width: contentWidth,
+        factor,
+        title: "ANEXO: MEDICIONES (continuacion)",
+        metaLines: [sanitizePdfText(data.studyType || "Estudio detectado")],
+        afterGap: 5 * factor,
+      });
     }
 
     const [sr, sg, sb] = statusRgb(m.status);

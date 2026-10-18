@@ -2,6 +2,7 @@ import { ReasoningChainData } from "../types";
 import { reasoningKindLabel, reasoningStatusLabel } from "../lib/reasoningChain";
 
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 
 function nodeFill(kind: string): [number, number, number] {
   switch (kind) {
@@ -42,15 +43,13 @@ export function renderReasoningChainAnnexToPDF(
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
   const pageBottom = pageHeight - 16 * factor;
-  const fsTitle = 13 * factor;
   const fsBanner = 10.5 * factor;
   const fsMeta = 9 * factor;
   const fsBody = 9.2 * factor;
   const lineBody = 4.3 * factor;
 
   // Clear of global running header on pages 2+ (label ~10mm + gray rule 15.5mm).
-  // Baseline at 20mm was kissing that gray line (glyph ascent overlaps the rule).
-  const topY = 22 * factor;
+  const topY = 20 * factor;
 
   const ensureSpace = (needed: number) => {
     if (y + needed <= pageBottom) return;
@@ -59,18 +58,17 @@ export function renderReasoningChainAnnexToPDF(
   };
 
   doc.addPage();
-  let y = topY;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(fsTitle);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: CADENA DE RAZONAMIENTO RADIOLOGICO", marginX, y);
-  y += 6.5 * factor;
-
-  doc.setDrawColor(139, 92, 246);
-  doc.setLineWidth(0.9);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 7 * factor;
+  let y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: topY,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: CADENA DE RAZONAMIENTO RADIOLOGICO",
+    metaLines: chain.certaintyLabel
+      ? [sanitizePdfText(`Certeza: ${chain.certaintyLabel}`)]
+      : [],
+    afterGap: 6 * factor,
+  });
 
   const bannerTitle = sanitizePdfText(
     `${chain.workingDiagnosis || chain.title}${chain.certaintyLabel ? `  |  Certeza: ${chain.certaintyLabel}` : ""}`

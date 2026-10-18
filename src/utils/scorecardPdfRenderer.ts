@@ -29,7 +29,6 @@ export function renderScorecardAnnexToPDF(
   const hasReco = !!(scorecard.recommendation && scorecard.recommendation.trim());
 
   // Typography tuned to fill the page without becoming huge
-  const fsTitle = 14 * factor;
   const fsBanner = 11 * factor;
   const fsMeta = 9.5 * factor;
   const fsTable = 9.2 * factor;
