@@ -123,6 +123,9 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   const [error, setError] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
 
+  // Never crash on null/undefined report from App (same pattern as Elastografía).
+  const safeReport = String(reportText || "");
+
   const orchestrationPlan = useMemo(
     () =>
       buildScorecardOrchestrationPlan({
@@ -131,7 +134,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
         specificStudy,
         modality,
         studyType,
-        reportText,
+        reportText: safeReport,
         hasGalleryUs,
         hasUsPlaneData,
         hasInfographic,
@@ -144,7 +147,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
       specificStudy,
       modality,
       studyType,
-      reportText,
+      safeReport,
       hasGalleryUs,
       hasUsPlaneData,
       hasInfographic,
@@ -155,7 +158,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   const orchestrateCount = orchestrationActionCount(orchestrationPlan);
 
   const handleGenerate = async () => {
-    if (!reportText.trim()) {
+    if (!safeReport.trim()) {
       setError("El reporte clínico está vacío. Genera o redacta un informe primero.");
       return;
     }
@@ -172,7 +175,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: selectedModel,
-          report: reportText,
+          report: safeReport,
           studyType: studyType || "",
           protocolId: protocolId === "custom" ? "auto" : protocolId,
           pathologyFocus: pathologyFocus.trim() || undefined,
@@ -204,7 +207,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
         specificStudy,
         modality,
         studyType,
-        reportText,
+        reportText: safeReport,
         hasGalleryUs,
         hasUsPlaneData,
         hasInfographic,
@@ -307,7 +310,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
         <button
           type="button"
           onClick={handleGenerate}
-          disabled={isLoading || !reportText.trim()}
+          disabled={isLoading || !safeReport.trim()}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-xs font-semibold"
         >
           {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -390,7 +393,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
               </div>
               <div className="text-sm text-slate-50 font-semibold mt-1 leading-snug">
                 {scorecardData.finalDiagnosis ||
-                  scorecardData.atlasFindings?.find((f) => f.role === "primary")?.label ||
+                  scorecardData.atlasFindings?.find((f) => f?.role === "primary")?.label ||
                   scorecardData.categoryAssigned}
               </div>
               <div className="text-[10px] text-slate-500 mt-1.5">
@@ -427,8 +430,8 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
                 </tr>
               </thead>
               <tbody>
-                {(scorecardData.criteria || []).map((row) => (
-                  <tr key={row.id} className="border-t border-slate-800/80 align-top">
+                {(scorecardData.criteria || []).filter(Boolean).map((row, idx) => (
+                  <tr key={row.id || `criterion-${idx}`} className="border-t border-slate-800/80 align-top">
                     <td className="px-3 py-2.5 text-slate-200 font-medium max-w-[180px]">
                       {row.criterion}
                       {row.atlasStructure && (

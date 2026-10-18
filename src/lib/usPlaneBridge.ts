@@ -80,7 +80,7 @@ export function suggestLesionTarget(opts: {
   const sc = opts.scorecardData;
   if (sc) {
     push(sc.finalDiagnosis);
-    const primaryLabel = (sc.atlasFindings || []).find((f) => f.role === "primary")?.label;
+    const primaryLabel = (sc.atlasFindings || []).find((f) => f?.role === "primary")?.label;
     push(primaryLabel);
   }
 
@@ -99,16 +99,17 @@ export function suggestLesionTarget(opts: {
     if (cat && !/^(musculoesquel|msk|abdominal|abdomen|vascular|gen[eé]rico|general)/i.test(cat)) {
       push(cat);
     }
-    (sc.atlasOverlays || []).slice(0, 4).forEach((o) => {
-      push(o.finding || o.structure);
+    (sc.atlasOverlays || []).filter(Boolean).slice(0, 4).forEach((o) => {
+      push(o?.finding || o?.structure);
     });
     (sc.criteria || [])
       .filter((c) => {
+        if (!c) return false;
         const st = String(c.status || "").toLowerCase();
         return st === "met" || st === "equivocal";
       })
       .slice(0, 3)
-      .forEach((c) => push(c.criterion));
+      .forEach((c) => push(c?.criterion));
   }
 
   // Fallbacks when ancla vacío
