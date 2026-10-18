@@ -152,3 +152,36 @@ glossary (array de objetos con term, plainDefinition).`,
   }
   return { data, model };
 }
+
+/**
+ * OpenAI TTS for patient WhatsApp audio (mp3).
+ * Caller must already have built a short spoken script (no treatment unless opted in).
+ */
+export async function synthesizePatientSummarySpeech(args: {
+  text: string;
+  voice?: string;
+}): Promise<{ buffer: Buffer; model: string; voice: string }> {
+  const apiKey = cleanOpenAiKey(process.env.OPENAI_API_KEY || "");
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY no configurada");
+  }
+  const text = String(args.text || "").replace(/\s+/g, " ").trim();
+  if (!text) {
+    throw new Error("Texto vacío para TTS");
+  }
+  // OpenAI TTS hard limit ~4096 chars; our 30–45 s scripts stay well under.
+  if (text.length > 4000) {
+    throw new Error("El guion de audio supera el límite permitido.");
+  }
+  const model = (process.env.OPENAI_TTS_MODEL || "tts-1").trim() || "tts-1";
+  const voice = (args.voice || process.env.OPENAI_TTS_VOICE || "nova").trim() || "nova";
+  const openai = new OpenAI({ apiKey });
+  const speech = await openai.audio.speech.create({
+    model,
+    voice: voice as any,
+    input: text,
+    response_format: "mp3",
+  });
+  const arrayBuffer = await speech.arrayBuffer();
+  return { buffer: Buffer.from(arrayBuffer), model, voice };
+}

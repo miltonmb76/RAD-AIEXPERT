@@ -213,6 +213,7 @@ import { persistBrandingAssets as persistBrandingAssetsLib } from "./lib/brandin
 import { createGmailSendAction } from "./lib/gmailSend";
 import { createDriveSaveAction } from "./lib/driveSave";
 import { buildWhatsAppTextPreview, buildWhatsAppSendUrl } from "./lib/whatsappShare";
+import { PatientSummaryAudioBar } from "./components/PatientSummaryAudioBar";
 import { buildSettingsBackup, downloadSettingsBackupJson, createImportAllDataHandler } from "./lib/settingsBackup";
 import { createBatchModuleActivator } from "./lib/batchModuleActivator";
 import { createNativePdfDownload } from "./lib/nativePdfDownload";
@@ -13590,6 +13591,23 @@ Ejemplo:
                                   </button>
                                 </div>
                               </div>
+
+                              <PatientSummaryAudioBar
+                                patientSummary={patientSummary}
+                                studyType={specificStudy || studyType}
+                                patientName={patientName}
+                                whatsappPhone={whatsappPhone}
+                                followUpText={[
+                                  clinicalScorecardData?.categoryAssigned,
+                                  clinicalScorecardData?.recommendation,
+                                ]
+                                  .map((s) => String(s || "").trim())
+                                  .filter(Boolean)
+                                  .join(". ")}
+                                onCopy={(text) => {
+                                  void copyToClipboard(text, false);
+                                }}
+                              />
 
                               {/* Findings List accordion */}
                               <div className="space-y-3.5 text-left">

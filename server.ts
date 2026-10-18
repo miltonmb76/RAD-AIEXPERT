@@ -23,6 +23,7 @@ import {
   generatePatientSummaryOpenAI,
   hasOpenAiApiKey,
   normalizePatientSummaryPayload,
+  synthesizePatientSummarySpeech,
 } from "./src/lib/openaiPatientSummary";
 import {
   buildInfographicLateralityPromptBlock,
@@ -3819,6 +3820,39 @@ Devuelve JSON con:
   } catch (error: any) {
     console.error("Error en /api/generate-patient-summary:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * Patient WhatsApp audio — OpenAI TTS mp3 from a pre-built spoken script.
+ * The client builds the script (findings only by default; follow-up opt-in).
+ * POST /api/patient-summary-tts  body: { text: string }
+ */
+app.post("/api/patient-summary-tts", async (req: express.Request, res: express.Response) => {
+  try {
+    const text = String(req.body?.text || "").trim();
+    if (!text) {
+      return res.status(400).json({ success: false, error: "Se requiere el guion de audio (text)." });
+    }
+    if (!hasOpenAiApiKey()) {
+      return res.status(503).json({
+        success: false,
+        error:
+          "OPENAI_API_KEY no configurada. Use «Escuchar» (voz del navegador) o copie el guion.",
+      });
+    }
+    const { buffer, model, voice } = await synthesizePatientSummarySpeech({ text });
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Disposition", 'attachment; filename="explicacion-paciente-whatsapp.mp3"');
+    res.setHeader("X-TTS-Model", model);
+    res.setHeader("X-TTS-Voice", voice);
+    return res.send(buffer);
+  } catch (error: any) {
+    console.error("Error en /api/patient-summary-tts:", error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || "No se pudo sintetizar el audio.",
+    });
   }
 });
 

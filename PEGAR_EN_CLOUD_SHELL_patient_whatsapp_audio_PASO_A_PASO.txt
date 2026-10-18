@@ -1,0 +1,24 @@
+================================================================================
+CLOUD SHELL — Audio WhatsApp resumen paciente (PASO A PASO)
+Si la consola se sale, NO pegues todo junto. Ejecuta BLOQUE 1, espera, luego 2.
+================================================================================
+
+--- BLOQUE 1 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert" 2>/dev/null || (git clone https://github.com/miltonmb76/RAD-AIEXPERT.git "$HOME/rad-ai-expert-deploy" && cd "$HOME/rad-ai-expert-deploy")
+git fetch origin cursor/patient-whatsapp-audio-0681
+git checkout -B cursor/patient-whatsapp-audio-0681 origin/cursor/patient-whatsapp-audio-0681
+git reset --hard origin/cursor/patient-whatsapp-audio-0681
+git rev-parse --short HEAD
+grep -q 'PatientSummaryAudioBar' src/App.tsx && echo "OK ui" || echo "ERROR"
+grep -q 'buildPatientSummarySpokenScript' src/lib/patientSummaryAudio.ts && echo "OK script" || echo "ERROR"
+grep -q 'patient-summary-tts' server.ts && echo "OK api" || echo "ERROR"
+grep -q 'Incluir seguimiento' src/components/PatientSummaryAudioBar.tsx && echo "OK opt-in" || echo "ERROR"
+
+--- BLOQUE 2 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"
+SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
+gcloud secrets describe openai-api-key >/dev/null 2>&1 && SECRETS="${SECRETS},OPENAI_API_KEY=openai-api-key:latest"
+gcloud run deploy rad-ai-expert --source . --region us-central1 --update-secrets="$SECRETS" 2>&1 | tee ~/deploy_patient_whatsapp_audio.log
+echo "Deploy termino: $?"
+gcloud run services describe rad-ai-expert --region us-central1 --format='value(status.url)'
+echo "Hard-refresh → Explicar para el paciente → barra Audio WhatsApp (seguimiento OFF por defecto)."
