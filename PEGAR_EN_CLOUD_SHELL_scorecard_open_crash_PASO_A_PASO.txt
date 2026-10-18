@@ -1,0 +1,23 @@
+================================================================================
+CLOUD SHELL — Fix crash al abrir Scorecard (PASO A PASO)
+Si la consola se sale, NO pegues todo junto. Ejecuta BLOQUE 1, espera, luego 2.
+================================================================================
+
+--- BLOQUE 1 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert" 2>/dev/null || (git clone https://github.com/miltonmb76/RAD-AIEXPERT.git "$HOME/rad-ai-expert-deploy" && cd "$HOME/rad-ai-expert-deploy")
+git fetch origin cursor/scorecard-open-crash-0681
+git checkout -B cursor/scorecard-open-crash-0681 origin/cursor/scorecard-open-crash-0681
+git reset --hard origin/cursor/scorecard-open-crash-0681
+git rev-parse --short HEAD
+grep -q 'safeReport' src/components/ClinicalScorecardModule.tsx && echo "OK safeReport" || echo "ERROR"
+grep -q 'AppErrorBoundary label="Scorecard de Criterios"' src/App.tsx && echo "OK boundary" || echo "ERROR"
+grep -q 'generatedReport || ""' src/App.tsx && echo "OK reportText" || echo "ERROR"
+
+--- BLOQUE 2 (copiar y Enter) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"
+SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
+gcloud secrets describe openai-api-key >/dev/null 2>&1 && SECRETS="${SECRETS},OPENAI_API_KEY=openai-api-key:latest"
+gcloud run deploy rad-ai-expert --source . --region us-central1 --update-secrets="$SECRETS" 2>&1 | tee ~/deploy_scorecard_open_crash.log
+echo "Deploy termino: $?"
+gcloud run services describe rad-ai-expert --region us-central1 --format='value(status.url)'
+echo "Hard-refresh → Abrir Scorecard (no debe caerse la app)."

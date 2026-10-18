@@ -7350,8 +7350,8 @@ Ejemplo:
                       setStudyType(item.studyType);
                       handleLoadStudyType(item.studyType);
                       setClinicalHistory(item.clinicalHistory);
-                      setGeneratedReport(item.reportText);
-                      setOriginalBaseReport(item.reportText);
+                      setGeneratedReport(item.reportText || "");
+                      setOriginalBaseReport(item.reportText || "");
                     }}
                   >
                     <div className="text-xs text-indigo-400 truncate font-bold">{item.studyType}</div>
@@ -12383,10 +12383,15 @@ Ejemplo:
                           
                           {isClinicalScorecardOpen && (
                             <div className="my-6">
+                              <AppErrorBoundary label="Scorecard de Criterios">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando Scorecard...</div>}>
                                 <ClinicalScorecardModule
                                   selectedModel={modelFor("clinical_scorecard")}
-                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  reportText={
+                                    isEditingReportManual
+                                      ? editedReportText || ""
+                                      : generatedReport || ""
+                                  }
                                   studyType={specificStudy || studyType}
                                   specificStudy={specificStudy}
                                   modality={modality}
@@ -12554,6 +12559,7 @@ Ejemplo:
                                   }}
                                 />
                               </React.Suspense>
+                              </AppErrorBoundary>
                             </div>
                           )}
 

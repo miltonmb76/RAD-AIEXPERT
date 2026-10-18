@@ -125,8 +125,16 @@ export function buildScorecardOrchestrationPlan(opts: {
       sc.studyRegion,
       sc.categoryAssigned,
       gov.categorySystem,
-      (sc.atlasFindings || []).map((f) => f.label || f.structure).join(" "),
-      (sc.atlasOverlays || []).map((o) => o.structure || o.finding).join(" "),
+      (sc.atlasFindings || [])
+        .filter(Boolean)
+        .map((f) => f?.label || f?.structure || "")
+        .filter(Boolean)
+        .join(" "),
+      (sc.atlasOverlays || [])
+        .filter(Boolean)
+        .map((o) => o?.structure || o?.finding || "")
+        .filter(Boolean)
+        .join(" "),
     ]
       .filter(Boolean)
       .join(" ")
@@ -167,6 +175,7 @@ export function buildScorecardOrchestrationPlan(opts: {
     : null;
 
   const hasCriteria = (sc.criteria || []).some((c) => {
+    if (!c) return false;
     const st = String(c.status || "").toLowerCase();
     return st === "met" || st === "equivocal";
   });
