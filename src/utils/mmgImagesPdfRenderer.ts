@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 import { getPanelLetter } from "./usImagesPdfRenderer";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 export interface MmgImageItem {
   id: string;
@@ -60,25 +62,26 @@ export function renderMmgImagesToPdf(
   const marginX = 14;
   const contentWidth = pageWidth - marginX * 2;
 
-  const headerStartY = 18;
-  const headerLineY = headerStartY + 4;
-  const gridStartY = headerStartY + 9;
+  const headerTopY = 20;
+  const estimatedGridStartY = headerTopY + 17;
   const bottomMargin = 18;
 
-  const renderPageHeader = (isContinuation = false) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10.5 * factor);
-    doc.setTextColor(15, 23, 42); // slate-900
-
+  const renderPageHeader = (isContinuation = false): number => {
     const titleText = isContinuation
       ? "ANEXO: IMÁGENES DE MAMOGRAFÍA (MMG) (CONTINUACIÓN)"
       : "ANEXO: IMÁGENES DE MAMOGRAFÍA (MMG)";
-    doc.text(titleText, marginX, headerStartY);
-
-    // Header divider
-    doc.setDrawColor(203, 213, 225); // slate-300
-    doc.setLineWidth(0.4);
-    doc.line(marginX, headerLineY, pageWidth - marginX, headerLineY);
+    const metaLines = options.studyTitle
+      ? [sanitizePdfText(String(options.studyTitle))]
+      : [];
+    return drawPackAnnexHeaderBand(doc, {
+      x: marginX,
+      y: headerTopY,
+      width: contentWidth,
+      factor,
+      title: titleText,
+      metaLines,
+      afterGap: 5 * factor,
+    });
   };
 
   // Sort images CC first, then MLO, then OTRO if detect function provided
@@ -191,7 +194,7 @@ export function renderMmgImagesToPdf(
   });
 
   // Render cards sequentially with smart pagination
-  let currentY = gridStartY;
+  let currentY = estimatedGridStartY;
   let isFirstPage = true;
   const gapY = 7;
 
@@ -201,8 +204,7 @@ export function renderMmgImagesToPdf(
 
     if (isFirstPage || needsNewPage) {
       doc.addPage();
-      renderPageHeader(!isFirstPage);
-      currentY = gridStartY;
+      currentY = renderPageHeader(!isFirstPage);
       isFirstPage = false;
     }
 

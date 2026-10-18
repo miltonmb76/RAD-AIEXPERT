@@ -4,6 +4,7 @@ import {
   negativityStatusLabel,
 } from "../lib/negativityChecklist";
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 
 /**
  * Annex: Checklist de negatividad dirigida.
@@ -31,7 +32,6 @@ export function renderNegativityChecklistAnnexToPDF(
   const pad = 1.6 * factor;
   const topY = 22 * factor;
 
-  const fsTitle = 12.5 * factor;
   const fsBanner = 9.5 * factor;
   const fsMainFindings = 8.4 * factor;
   const fsHeader = 8.4 * factor;
@@ -55,28 +55,22 @@ export function renderNegativityChecklistAnnexToPDF(
 
   const startPageChrome = (continued: boolean) => {
     doc.addPage();
-    y = topY;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(fsTitle);
-    doc.setTextColor(15, 23, 42);
     const baseTitle = continued
       ? "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (cont.)"
       : "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA";
-    const pageTitle = requestedFocus ? `${baseTitle} — ${requestedFocus}` : baseTitle;
-    const pageTitleLines = doc.splitTextToSize(
-      pageTitle,
-      pageWidth - marginX * 2
-    );
-    pageTitleLines.forEach((line: string) => {
-      doc.text(line, marginX, y);
-      y += 4.8 * factor;
+    const metaLines = [
+      requestedFocus,
+      continued ? "continuación" : "",
+    ].filter(Boolean);
+    y = drawPackAnnexHeaderBand(doc, {
+      x: marginX,
+      y: topY,
+      width: contentWidth,
+      factor,
+      title: baseTitle,
+      metaLines,
+      afterGap: 5 * factor,
     });
-
-    doc.setDrawColor(accent[0], accent[1], accent[2]);
-    doc.setLineWidth(0.8);
-    doc.line(marginX, y, pageWidth - marginX, y);
-    y += 5 * factor;
   };
 
   const drawTableHeader = () => {

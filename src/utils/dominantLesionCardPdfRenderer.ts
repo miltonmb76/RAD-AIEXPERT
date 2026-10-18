@@ -2,6 +2,7 @@ import type { jsPDF } from "jspdf";
 import type { DominantLesionCardData } from "../lib/dominantLesionCard";
 import { formatDominantCategoryBadge } from "../lib/clinicalIntelligence";
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 
 function wrapText(doc: jsPDF, text: string, maxW: number, maxLines: number): string[] {
   const lines = doc.splitTextToSize(sanitizePdfText(text || ""), maxW) as string[];
@@ -166,37 +167,19 @@ export async function renderDominantLesionCardAnnexToPDF(
   doc.setFillColor(248, 250, 252);
   doc.rect(0, 15.2, pageW, pageH - 15.2, "F");
 
-  // Same clearance as vascular/thyroid annexes
-  let y = 22;
-
-  // Compact masthead (never under the y=14 running header line)
-  const headH = 20;
-  doc.setFillColor(15, 23, 42);
-  doc.roundedRect(margin, y, contentW, headH, 2.2, 2.2, "F");
-  doc.setFillColor(190, 18, 60);
-  doc.rect(margin, y + headH - 1.3, contentW, 1.3, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.setTextColor(251, 113, 133);
-  doc.text("LESIÓN DOMINANTE", margin + 3.5, y + 5.2);
-
-  // Category lives in the facts column (not a clipped masthead pill).
-  const titleMaxW = contentW - 8;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(255, 255, 255);
-  const titleLine = wrapText(doc, data.lesionLabel, titleMaxW, 1)[0] || "Lesión dominante";
-  doc.text(titleLine, margin + 3.5, y + 12);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(203, 213, 225);
-  const meta = [data.site, data.laterality, data.studyRegion].filter(Boolean).join(" · ");
-  doc.text(wrapText(doc, meta, titleMaxW, 1)[0] || "", margin + 3.5, y + 16.8);
-
-  y += headH + 4;
+  // Pack-style annex band (same chrome as narrative annexes)
+  const metaParts = [data.site, data.laterality, data.studyRegion]
+    .filter(Boolean)
+    .map((s) => sanitizePdfText(String(s)));
+  let y = drawPackAnnexHeaderBand(doc, {
+    x: margin,
+    y: 20,
+    width: contentW,
+    factor: 1,
+    title: sanitizePdfText(data.lesionLabel || "LESIÓN DOMINANTE"),
+    metaLines: metaParts.length ? metaParts : ["LESIÓN DOMINANTE"],
+    afterGap: 4,
+  });
 
   const gap = 4.5;
   const mediaW = contentW * 0.52;

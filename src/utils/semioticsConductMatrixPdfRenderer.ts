@@ -1,5 +1,6 @@
 import { SemioticsConductMatrixData } from "../types";
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 
 /**
  * Annex: semiology → conduct decision matrix for the PDF.
@@ -31,7 +32,6 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   const pageBottom = pageHeight - 14 * factor;
 
   // Slightly larger type for readability; line height keeps wrapped sentences inside cells.
-  const fsTitle = 14.5 * factor;
   const fsBanner = 11 * factor;
   const fsMeta = 9.4 * factor;
   const fsBody = 10 * factor;
@@ -42,8 +42,7 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   const minRowH = 14 * factor;
 
   // Clear of running header ("ULTRASONIDO… / Pág. …") + separator line (~12–14 mm).
-  const topSafe = 26 * factor;
-  let y = topSafe;
+  const topSafe = 20 * factor;
 
   const ensureSpace = (needed: number) => {
     if (y + needed <= pageBottom) return;
@@ -52,21 +51,21 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   };
 
   // Fixed annex label — never append/truncate focus here (avoids dangling "(").
-  const annexTitle = "MATRIZ SEMIOLOGIA / CONDUCTA";
+  const annexTitle = "ANEXO: MATRIZ SEMIOLOGIA / CONDUCTA";
 
   doc.addPage();
-  y = topSafe;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(fsTitle);
-  doc.setTextColor(15, 23, 42);
-  doc.text(annexTitle, marginX, y);
-  y += 7.5 * factor;
-
-  doc.setDrawColor(192, 38, 211);
-  doc.setLineWidth(1.1);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 8 * factor;
+  let y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: topSafe,
+    width: contentWidth,
+    factor,
+    title: annexTitle,
+    metaLines: [
+      sanitizePdfText(matrix.focusTopic || ""),
+      sanitizePdfText(matrix.studyRegion || ""),
+    ].filter(Boolean),
+    afterGap: 6 * factor,
+  });
 
   const focusLine = sanitizePdfText(
     `Enfoque: ${matrix.focusTopic || "Del informe"}${

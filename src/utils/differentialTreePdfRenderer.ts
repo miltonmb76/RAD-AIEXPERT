@@ -2,6 +2,7 @@ import { DifferentialTreeData } from "../types";
 import { differentialStatusLabel } from "../lib/differentialTree";
 
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawPackAnnexHeaderBand } from "./pdfAnnexChrome";
 
 function statusFill(status: string): [number, number, number] {
   if (status === "leading") return [16, 185, 129];
@@ -27,33 +28,31 @@ export function renderDifferentialTreeAnnexToPDF(
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
   const pageBottom = pageHeight - 16 * factor;
-  const fsTitle = 13 * factor;
   const fsBanner = 10.5 * factor;
   const fsMeta = 9 * factor;
   const fsBody = 9.2 * factor;
   const lineBody = 4.3 * factor;
 
-  let y = 20 * factor;
+  const topY = 20 * factor;
 
   const ensureSpace = (needed: number) => {
     if (y + needed <= pageBottom) return;
     doc.addPage();
-    y = 18 * factor;
+    y = topY;
   };
 
   doc.addPage();
-  y = 20 * factor;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(fsTitle);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: ARBOL DE DIFERENCIALES CON PODA", marginX, y);
-  y += 5.5 * factor;
-
-  doc.setDrawColor(249, 115, 22);
-  doc.setLineWidth(0.9);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 7 * factor;
+  let y = drawPackAnnexHeaderBand(doc, {
+    x: marginX,
+    y: topY,
+    width: contentWidth,
+    factor,
+    title: "ANEXO: ARBOL DE DIFERENCIALES CON PODA",
+    metaLines: tree.certaintyLabel
+      ? [sanitizePdfText(`Certeza: ${tree.certaintyLabel}`)]
+      : [],
+    afterGap: 6 * factor,
+  });
 
   const q = sanitizePdfText(tree.clinicalQuestion || tree.title);
   const lead = sanitizePdfText(
