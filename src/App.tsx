@@ -142,7 +142,8 @@ import {
   FileSpreadsheet,
   FileStack,
   MapPinned,
-  Anchor
+  Anchor,
+  Volume2,
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -213,6 +214,11 @@ import { persistBrandingAssets as persistBrandingAssetsLib } from "./lib/brandin
 import { createGmailSendAction } from "./lib/gmailSend";
 import { createDriveSaveAction } from "./lib/driveSave";
 import { buildWhatsAppTextPreview, buildWhatsAppSendUrl } from "./lib/whatsappShare";
+import { PatientSummaryAudioBar } from "./components/PatientSummaryAudioBar";
+import {
+  downloadPatientSummaryAudioMp3,
+  fetchPatientSummaryAudioScript,
+} from "./lib/patientSummaryAudio";
 import { buildSettingsBackup, downloadSettingsBackupJson, createImportAllDataHandler } from "./lib/settingsBackup";
 import { createBatchModuleActivator } from "./lib/batchModuleActivator";
 import { createNativePdfDownload } from "./lib/nativePdfDownload";
@@ -1011,6 +1017,9 @@ export default function App() {
   const [whatsappPhone, setWhatsappPhone] = useState<string>(() => localStorage.getItem("rad_whatsapp_phone") || "");
   const [whatsappIncludePatientSummary, setWhatsappIncludePatientSummary] = useState<boolean>(true);
   const [whatsappIncludeOperationalSummary, setWhatsappIncludeOperationalSummary] = useState<boolean>(true);
+  const [whatsappAudioIncludeFollowUp, setWhatsappAudioIncludeFollowUp] = useState<boolean>(false);
+  const [isDownloadingWhatsappAudio, setIsDownloadingWhatsappAudio] = useState<boolean>(false);
+  const [whatsappAudioError, setWhatsappAudioError] = useState<string | null>(null);
   
   // Gmail Share States
   const [showGmailModal, setShowGmailModal] = useState<boolean>(false);
@@ -6070,6 +6079,42 @@ Ejemplo:
     return download(openInNewTab, shareViaWebShare, returnBase64, returnBlobUrl, studyOverride, returnRawBlob);
   };
 
+
+  const handleDownloadWhatsappPatientAudio = async () => {
+    if (!patientSummary) {
+      setWhatsappAudioError("Primero genera la explicación para el paciente.");
+      return;
+    }
+    setIsDownloadingWhatsappAudio(true);
+    setWhatsappAudioError(null);
+    try {
+      const followUpText = [
+        clinicalScorecardData?.categoryAssigned,
+        clinicalScorecardData?.recommendation,
+      ]
+        .map((s) => String(s || "").trim())
+        .filter(Boolean)
+        .join(". ");
+      const { script } = await fetchPatientSummaryAudioScript({
+        patientSummary,
+        includeFollowUp: whatsappAudioIncludeFollowUp,
+        followUpText: whatsappAudioIncludeFollowUp ? followUpText : "",
+        studyType: specificStudy || studyType,
+        patientFirstName: patientName,
+      });
+      await downloadPatientSummaryAudioMp3({
+        script,
+        includeFollowUp: whatsappAudioIncludeFollowUp,
+        patientName,
+      });
+    } catch (e: any) {
+      setWhatsappAudioError(
+        e?.message || "No se pudo descargar el audio. Verifique OPENAI_API_KEY."
+      );
+    } finally {
+      setIsDownloadingWhatsappAudio(false);
+    }
+  };
 
   const handleDownloadPatientSummaryPDF = async (
     openInNewTab: boolean = false,
@@ -13591,6 +13636,23 @@ Ejemplo:
                                 </div>
                               </div>
 
+                              <PatientSummaryAudioBar
+                                patientSummary={patientSummary}
+                                studyType={specificStudy || studyType}
+                                patientName={patientName}
+                                whatsappPhone={whatsappPhone}
+                                followUpText={[
+                                  clinicalScorecardData?.categoryAssigned,
+                                  clinicalScorecardData?.recommendation,
+                                ]
+                                  .map((s) => String(s || "").trim())
+                                  .filter(Boolean)
+                                  .join(". ")}
+                                onCopy={(text) => {
+                                  void copyToClipboard(text, false);
+                                }}
+                              />
+
                               {/* Findings List accordion */}
                               <div className="space-y-3.5 text-left">
                                 <div className="flex items-center gap-1.5 border-b border-orange-950/20 pb-2">
@@ -16483,10 +16545,10 @@ Ejemplo:
                 </div>
               </div>
 
-              {/* PASO 2: DESCARGAR ARCHIVOS PDF */}
+              {/* PASO 2: DESCARGAR ARCHIVOS (PDF + AUDIO) */}
               <div className="space-y-2.5">
                 <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
-                  PASO 2: Descargar Documentos Clínicos (Para Adjuntar)
+                  PASO 2: Descargar documentos / audio (para adjuntar)
                 </h4>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -16526,7 +16588,70 @@ Ejemplo:
                       <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">Acompañamiento Didáctico</span>
                     </div>
                   </button>
+
+                  {/* Download patient audio MP3 */}
+                  <button
+                    type="button"
+                    disabled={!patientSummary || isDownloadingWhatsappAudio}
+                    onClick={() => {
+                      void handleDownloadWhatsappPatientAudio();
+                    }}
+                    className={`p-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 select-none sm:col-span-2 ${
+                      patientSummary && !isDownloadingWhatsappAudio
+                        ? "bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-500/40 text-emerald-100 cursor-pointer"
+                        : "bg-slate-950/20 border-slate-900 text-slate-500 cursor-not-allowed"
+                    }`}
+                    title={
+                      patientSummary
+                        ? "Descargar audio MP3 (voz natural) de la explicación al paciente para adjuntar en WhatsApp"
+                        : "Primero genera la explicación para el paciente"
+                    }
+                  >
+                    {isDownloadingWhatsappAudio ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                    ) : (
+                      <Volume2 className="h-4 w-4 text-emerald-400" />
+                    )}
+                    <div className="text-left flex-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider block">
+                        {isDownloadingWhatsappAudio ? "Generando audio…" : "3. Audio explicación (MP3)"}
+                      </span>
+                      <span className="text-[8.5px] text-slate-400 font-mono leading-none block uppercase">
+                        Voz natural · Qué estudio + En pocas palabras · sin tratamiento por defecto
+                      </span>
+                    </div>
+                  </button>
                 </div>
+
+                <label
+                  className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all select-none ${
+                    !patientSummary
+                      ? "bg-slate-950/20 border-slate-900 text-slate-600 cursor-not-allowed"
+                      : whatsappAudioIncludeFollowUp
+                        ? "bg-emerald-950/20 border-emerald-900/60 text-emerald-200 cursor-pointer"
+                        : "bg-slate-950/40 border-slate-850 text-slate-400 hover:border-slate-800 cursor-pointer"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!patientSummary}
+                    checked={!!patientSummary && whatsappAudioIncludeFollowUp}
+                    onChange={(e) => setWhatsappAudioIncludeFollowUp(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-800 text-emerald-600 focus:ring-emerald-600 h-3.5 w-3.5 bg-slate-950"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-[10.5px] font-black uppercase tracking-wider block">
+                      Incluir seguimiento en el audio (BI-RADS, TI-RADS…)
+                    </span>
+                    <span className="text-[9px] text-slate-400 leading-normal block">
+                      Apagado por defecto: solo explica hallazgos. Actívelo si quiere mencionar control/categoría del scorecard.
+                    </span>
+                  </div>
+                </label>
+
+                {whatsappAudioError ? (
+                  <p className="text-[10px] text-amber-300/90 leading-snug">{whatsappAudioError}</p>
+                ) : null}
 
                 <button
                   type="button"
@@ -16640,9 +16765,9 @@ Ejemplo:
                   <span>💡</span> PROCESO DE COMPARTIDO RECOMENDADO (30 SEGUNDOS):
                 </div>
                 <ol className="list-decimal list-inside space-y-1 text-slate-300 font-medium">
-                  <li>Haz clic en los botones del <span className="text-indigo-400 font-bold">PASO 2</span> para descargar los archivos PDF que quieras enviar.</li>
-                  <li>Haz clic en <span className="text-emerald-400 font-bold">Lanzar Chat de WhatsApp</span>. Esto abrirá el chat con el paciente y cargará el texto explicativo.</li>
-                  <li>Simplemente arrastra los archivos PDF descargados a la ventana del chat de WhatsApp y envíalos. <span className="text-indigo-300 font-semibold">¡Sencillo, profesional y 100% privado!</span></li>
+                  <li>En el <span className="text-indigo-400 font-bold">PASO 2</span> descarga los PDF y, si quieres, el <span className="text-emerald-400 font-bold">audio MP3</span> de la explicacion.</li>
+                  <li>Haz clic en <span className="text-emerald-400 font-bold">Lanzar Chat de WhatsApp</span>. Esto abrira el chat con el paciente y cargara el texto explicativo.</li>
+                  <li>Arrastra los PDF y/o el MP3 al chat de WhatsApp y envialos. <span className="text-indigo-300 font-semibold">Sencillo, profesional y 100% privado.</span></li>
                 </ol>
               </div>
             </div>

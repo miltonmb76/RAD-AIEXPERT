@@ -152,3 +152,139 @@ glossary (array de objetos con term, plainDefinition).`,
   }
   return { data, model };
 }
+
+/**
+ * AI spoken script from the first 2 patient-PDF sections:
+ * studyOverview («Qué estudio se le realizó») + summary («En pocas palabras»).
+ * Returns plain text only. Caller expands Romans / runs TTS.
+ */
+export async function generatePatientSummaryAudioScriptOpenAI(args: {
+  patientSummary: PatientSummaryPayload | Record<string, unknown>;
+  includeFollowUp?: boolean;
+  followUpText?: string;
+  studyType?: string;
+  patientFirstName?: string;
+}): Promise<{ script: string; model: string }> {
+  const apiKey = cleanOpenAiKey(process.env.OPENAI_API_KEY || "");
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY no configurada");
+  }
+  const model = (process.env.OPENAI_TEXT_MODEL || "gpt-4o").trim() || "gpt-4o";
+  const openai = new OpenAI({ apiKey });
+  const includeFollowUp = args.includeFollowUp === true;
+  const ps = args.patientSummary as any;
+  const studyOverview = String(ps?.studyOverview || "").trim();
+  const summary = String(ps?.summary || "").trim();
+  if (!studyOverview && !summary) {
+    throw new Error("Faltan las secciones studyOverview / summary para el guion de audio.");
+  }
+
+  const system = includeFollowUp
+    ? "Eres redactor de guiones hablados para pacientes de radiología. Narra con fidelidad las dos primeras secciones de la explicación escrita. Puedes mencionar seguimiento solo si se te da texto de seguimiento."
+    : "Eres redactor de guiones hablados para pacientes de radiología. Narra con fidelidad las dos primeras secciones de la explicación escrita. PROHIBIDO recomendaciones, tratamiento, controles, biopsias o 'qué hacer'.";
+
+  const user = `Redacta un GUION HABLADO en español (para audio WhatsApp) usando SOLO estas dos secciones del PDF de explicación al paciente.
+
+Nombre (opcional): ${args.patientFirstName || "(sin nombre)"}
+Estudio: ${args.studyType || "(no especificado)"}
+Incluir seguimiento: ${includeFollowUp ? "SÍ" : "NO"}
+Texto de seguimiento (solo si aplica): ${includeFollowUp ? args.followUpText || "" : "(no usar)"}
+
+SECCIÓN 1 — Qué estudio se le realizó:
+${studyOverview || "(vacía)"}
+
+SECCIÓN 2 — En pocas palabras:
+${summary || "(vacía)"}
+
+REGLAS OBLIGATORIAS:
+1. Fuente de verdad: únicamente las dos secciones anteriores. No inventes hallazgos ni uses otras partes del informe.
+2. Conserva el contenido clínico de ambas secciones (órganos y hallazgos que ya mencionan). Puedes alisar el texto para que suene hablado, sin acortar de forma que se pierda información.
+3. Estructura: saludo breve → narrar sección 1 → narrar sección 2 → cierre breve.
+4. Frases claras, tono profesional y cálido. Sin markdown, sin viñetas, sin comillas decorativas.
+5. ${
+    includeFollowUp
+      ? "Puedes añadir al final el seguimiento indicado."
+      : "NO menciones recomendaciones, tratamiento ni plan de seguimiento."
+  }
+6. Longitud natural (aprox. 45 a 150 segundos). No cortes a mitad de una idea de las secciones.
+7. Responde SOLO con el texto del guion.`;
+
+  const completion = await openai.chat.completions.create({
+    model,
+    temperature: 0.25,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  let script = String(completion.choices?.[0]?.message?.content || "")
+    .replace(/^```[\s\S]*?\n/, "")
+    .replace(/```$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!script || script.length < 40) {
+    throw new Error("OpenAI devolvió un guion de audio vacío.");
+  }
+  // Soft cap for TTS API (~4096 chars)
+  if (script.length > 3900) {
+    script = script.slice(0, 3900);
+    const cut = Math.max(script.lastIndexOf("."), script.lastIndexOf("!"), script.lastIndexOf("?"));
+    if (cut > 2000) script = script.slice(0, cut + 1);
+  }
+  return { script, model };
+}
+
+/** Default delivery style for patient WhatsApp audio (gpt-4o-mini-tts only). */
+export const PATIENT_TTS_INSTRUCTIONS =
+  "Habla en español latinoamericano con voz cálida, clara y profesional. " +
+  "Ritmo calmado de explicación clínica breve (como un radiólogo que resume hallazgos al paciente). " +
+  "Sin dramatismo ni tono publicitario. Pronuncia bien términos médicos en español. " +
+  "Pausas naturales entre oraciones.";
+
+/**
+ * OpenAI TTS for patient WhatsApp audio (mp3).
+ * Defaults to gpt-4o-mini-tts + marin (more natural than browser / tts-1).
+ * Caller must already have built a short spoken script (no treatment unless opted in).
+ */
+export async function synthesizePatientSummarySpeech(args: {
+  text: string;
+  voice?: string;
+  /** Style instructions — ignored by tts-1 / tts-1-hd. */
+  instructions?: string;
+}): Promise<{ buffer: Buffer; model: string; voice: string }> {
+  const apiKey = cleanOpenAiKey(process.env.OPENAI_API_KEY || "");
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY no configurada");
+  }
+  const text = String(args.text || "").replace(/\s+/g, " ").trim();
+  if (!text) {
+    throw new Error("Texto vacío para TTS");
+  }
+  // OpenAI TTS hard limit ~4096 chars (full-finding scripts usually fit).
+  if (text.length > 4000) {
+    throw new Error("El guion de audio supera el límite permitido.");
+  }
+  const model =
+    (process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts").trim() || "gpt-4o-mini-tts";
+  const voice = (args.voice || process.env.OPENAI_TTS_VOICE || "marin").trim() || "marin";
+  const instructions = String(
+    args.instructions || process.env.OPENAI_TTS_INSTRUCTIONS || PATIENT_TTS_INSTRUCTIONS
+  ).trim();
+  const openai = new OpenAI({ apiKey });
+
+  const request: Record<string, unknown> = {
+    model,
+    voice: voice as any,
+    input: text,
+    response_format: "mp3",
+  };
+  // Steerability (accent/tone) only on gpt-4o-mini-tts family — not tts-1 / tts-1-hd.
+  if (instructions && !/^tts-1/i.test(model)) {
+    request.instructions = instructions;
+  }
+
+  const speech = await openai.audio.speech.create(request as any);
+  const arrayBuffer = await speech.arrayBuffer();
+  return { buffer: Buffer.from(arrayBuffer), model, voice };
+}

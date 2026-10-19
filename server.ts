@@ -20,10 +20,18 @@ import {
 } from "./src/lib/findingsInfographic";
 import { normalizeDominantLesionCardData } from "./src/lib/dominantLesionCard";
 import {
+  generatePatientSummaryAudioScriptOpenAI,
   generatePatientSummaryOpenAI,
   hasOpenAiApiKey,
   normalizePatientSummaryPayload,
+  synthesizePatientSummarySpeech,
 } from "./src/lib/openaiPatientSummary";
+import {
+  buildPatientSummarySpokenScript,
+  expandRomanNumeralsForSpeech,
+  finalizePatientAudioScript,
+  listPatientSummaryFindingLabels,
+} from "./src/lib/patientSummaryAudio";
 import {
   buildInfographicLateralityPromptBlock,
   detectInfographicViewOrientation,
@@ -3819,6 +3827,128 @@ Devuelve JSON con:
   } catch (error: any) {
     console.error("Error en /api/generate-patient-summary:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * Spoken patient-audio script from the first 2 PDF sections:
+ * «Qué estudio se le realizó» + «En pocas palabras».
+ * Prefers OpenAI; falls back to local builder of those same two fields.
+ * POST /api/patient-summary-audio-script
+ * body: { patientSummary, includeFollowUp?, followUpText?, studyType?, patientFirstName? }
+ */
+app.post("/api/patient-summary-audio-script", async (req: express.Request, res: express.Response) => {
+  try {
+    const patientSummary = req.body?.patientSummary;
+    if (!patientSummary) {
+      return res.status(400).json({
+        success: false,
+        error: "Se requiere patientSummary (misma explicación que el PDF).",
+      });
+    }
+    const includeFollowUp = req.body?.includeFollowUp === true;
+    const followUpText = String(req.body?.followUpText || "");
+    const studyType = String(req.body?.studyType || "");
+    const patientFirstName = String(req.body?.patientFirstName || "");
+    const hasOverview = Boolean(String(patientSummary.studyOverview || "").trim());
+    const hasSummary = Boolean(String(patientSummary.summary || "").trim());
+
+    let script = "";
+    let provider: "openai" | "local" = "local";
+    let model = "local-builder";
+
+    if (hasOpenAiApiKey() && (hasOverview || hasSummary)) {
+      try {
+        const ai = await generatePatientSummaryAudioScriptOpenAI({
+          patientSummary,
+          includeFollowUp,
+          followUpText,
+          studyType,
+          patientFirstName,
+        });
+        script = expandRomanNumeralsForSpeech(ai.script);
+        provider = "openai";
+        model = ai.model;
+      } catch (openaiErr: any) {
+        console.warn(
+          "Guion audio paciente: OpenAI falló; usando builder local.",
+          openaiErr?.message || openaiErr
+        );
+      }
+    }
+
+    if (!script) {
+      script = buildPatientSummarySpokenScript(patientSummary, {
+        includeFollowUp,
+        followUpText,
+        studyType,
+        patientFirstName,
+        maxWords: 450,
+      });
+      provider = "local";
+      model = "local-builder";
+    }
+
+    script = finalizePatientAudioScript(script, { includeFollowUp });
+
+    return res.json({
+      success: true,
+      script,
+      provider,
+      model,
+      sourceSections: ["studyOverview", "summary"],
+      findingCount: listPatientSummaryFindingLabels(patientSummary).length,
+    });
+  } catch (error: any) {
+    console.error("Error en /api/patient-summary-audio-script:", error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || "No se pudo generar el guion de audio.",
+    });
+  }
+});
+
+/**
+ * Patient WhatsApp audio — OpenAI TTS mp3 from a pre-built spoken script.
+ * The client builds the script (findings only by default; follow-up opt-in).
+ * POST /api/patient-summary-tts  body: { text: string }
+ */
+app.post("/api/patient-summary-tts", async (req: express.Request, res: express.Response) => {
+  try {
+    const text = String(req.body?.text || "").trim();
+    if (!text) {
+      return res.status(400).json({ success: false, error: "Se requiere el guion de audio (text)." });
+    }
+    if (!hasOpenAiApiKey()) {
+      return res.status(503).json({
+        success: false,
+        error:
+          "OPENAI_API_KEY no configurada. Use «Escuchar» (voz del navegador) o copie el guion.",
+      });
+    }
+    const { buffer, model, voice } = await synthesizePatientSummarySpeech({ text });
+    const rawName = String(req.body?.filename || "").trim();
+    const safeName = rawName
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 120);
+    const downloadName =
+      safeName && /\.mp3$/i.test(safeName)
+        ? safeName
+        : safeName
+          ? `${safeName}.mp3`
+          : "paciente_audio.mp3";
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
+    res.setHeader("X-TTS-Model", model);
+    res.setHeader("X-TTS-Voice", voice);
+    return res.send(buffer);
+  } catch (error: any) {
+    console.error("Error en /api/patient-summary-tts:", error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || "No se pudo sintetizar el audio.",
+    });
   }
 });
 
