@@ -153,6 +153,86 @@ glossary (array de objetos con term, plainDefinition).`,
   return { data, model };
 }
 
+/**
+ * AI spoken script covering EVERY patient-summary finding (same scope as PDF).
+ * Returns plain text only. Caller expands Romans / runs TTS.
+ */
+export async function generatePatientSummaryAudioScriptOpenAI(args: {
+  patientSummary: PatientSummaryPayload | Record<string, unknown>;
+  includeFollowUp?: boolean;
+  followUpText?: string;
+  studyType?: string;
+  patientFirstName?: string;
+}): Promise<{ script: string; model: string }> {
+  const apiKey = cleanOpenAiKey(process.env.OPENAI_API_KEY || "");
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY no configurada");
+  }
+  const model = (process.env.OPENAI_TEXT_MODEL || "gpt-4o").trim() || "gpt-4o";
+  const openai = new OpenAI({ apiKey });
+  const includeFollowUp = args.includeFollowUp === true;
+  const findings = Array.isArray((args.patientSummary as any)?.keyFindings)
+    ? (args.patientSummary as any).keyFindings
+    : [];
+  const findingLabels = findings
+    .map((f: any) => String(f?.title || f?.finding || "").trim())
+    .filter(Boolean);
+
+  const system = includeFollowUp
+    ? "Eres redactor de guiones hablados para pacientes de radiología. Cubres todos los hallazgos en lenguaje claro. Puedes mencionar seguimiento solo si se te da texto de seguimiento."
+    : "Eres redactor de guiones hablados para pacientes de radiología. Cubres todos los hallazgos en lenguaje claro. PROHIBIDO recomendaciones, tratamiento, controles, biopsias o 'qué hacer'.";
+
+  const user = `Redacta un GUION HABLADO en español (para audio WhatsApp) a partir de esta explicación al paciente (mismo contenido que el PDF explicativo).
+
+Nombre (opcional): ${args.patientFirstName || "(sin nombre)"}
+Estudio: ${args.studyType || "(no especificado)"}
+Incluir seguimiento: ${includeFollowUp ? "SÍ" : "NO"}
+Texto de seguimiento (solo si aplica): ${includeFollowUp ? args.followUpText || "" : "(no usar)"}
+
+JSON de la explicación:
+${JSON.stringify(args.patientSummary)}
+
+REGLAS OBLIGATORIAS:
+1. Debes mencionar TODOS estos hallazgos, sin omitir ninguno: ${
+    findingLabels.length ? findingLabels.join(" · ") : "(usar todos los keyFindings del JSON)"
+  }.
+2. Si el JSON habla de ovario, riñones, hígado, útero, etc., cada uno debe aparecer en el audio.
+3. Estructura: saludo breve → qué estudio se hizo (1-2 frases) → síntesis corta → cada hallazgo con 1-2 frases claras → cierre.
+4. Frases cortas, tono profesional y cálido. Sin markdown, sin viñetas, sin comillas decorativas.
+5. ${
+    includeFollowUp
+      ? "Puedes añadir al final el seguimiento indicado."
+      : "NO menciones recomendaciones, tratamiento ni plan de seguimiento."
+  }
+6. Longitud: la necesaria para cubrir TODOS los hallazgos (aprox. 60 a 180 segundos al hablar). No cortes a mitad de órganos.
+7. Responde SOLO con el texto del guion.`;
+
+  const completion = await openai.chat.completions.create({
+    model,
+    temperature: 0.25,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  let script = String(completion.choices?.[0]?.message?.content || "")
+    .replace(/^```[\s\S]*?\n/, "")
+    .replace(/```$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!script || script.length < 40) {
+    throw new Error("OpenAI devolvió un guion de audio vacío.");
+  }
+  // Soft cap for TTS API (~4096 chars)
+  if (script.length > 3900) {
+    script = script.slice(0, 3900);
+    const cut = Math.max(script.lastIndexOf("."), script.lastIndexOf("!"), script.lastIndexOf("?"));
+    if (cut > 2000) script = script.slice(0, cut + 1);
+  }
+  return { script, model };
+}
+
 /** Default delivery style for patient WhatsApp audio (gpt-4o-mini-tts only). */
 export const PATIENT_TTS_INSTRUCTIONS =
   "Habla en español latinoamericano con voz cálida, clara y profesional. " +
@@ -179,7 +259,7 @@ export async function synthesizePatientSummarySpeech(args: {
   if (!text) {
     throw new Error("Texto vacío para TTS");
   }
-  // OpenAI TTS hard limit ~4096 chars; our 30–45 s scripts stay well under.
+  // OpenAI TTS hard limit ~4096 chars (full-finding scripts usually fit).
   if (text.length > 4000) {
     throw new Error("El guion de audio supera el límite permitido.");
   }

@@ -216,8 +216,8 @@ import { createDriveSaveAction } from "./lib/driveSave";
 import { buildWhatsAppTextPreview, buildWhatsAppSendUrl } from "./lib/whatsappShare";
 import { PatientSummaryAudioBar } from "./components/PatientSummaryAudioBar";
 import {
-  buildPatientSummarySpokenScript,
   downloadPatientSummaryAudioMp3,
+  fetchPatientSummaryAudioScript,
 } from "./lib/patientSummaryAudio";
 import { buildSettingsBackup, downloadSettingsBackupJson, createImportAllDataHandler } from "./lib/settingsBackup";
 import { createBatchModuleActivator } from "./lib/batchModuleActivator";
@@ -6082,7 +6082,7 @@ Ejemplo:
 
   const handleDownloadWhatsappPatientAudio = async () => {
     if (!patientSummary) {
-      setWhatsappAudioError("Primero genera la explicación para el paciente.");
+      setWhatsappAudioError("Primero genera la explicaciÃ³n para el paciente.");
       return;
     }
     setIsDownloadingWhatsappAudio(true);
@@ -6095,12 +6095,12 @@ Ejemplo:
         .map((s) => String(s || "").trim())
         .filter(Boolean)
         .join(". ");
-      const script = buildPatientSummarySpokenScript(patientSummary, {
+      const { script } = await fetchPatientSummaryAudioScript({
+        patientSummary,
         includeFollowUp: whatsappAudioIncludeFollowUp,
         followUpText: whatsappAudioIncludeFollowUp ? followUpText : "",
         studyType: specificStudy || studyType,
         patientFirstName: patientName,
-        maxWords: whatsappAudioIncludeFollowUp ? 125 : 110,
       });
       await downloadPatientSummaryAudioMp3({
         script,
@@ -16603,8 +16603,8 @@ Ejemplo:
                     }`}
                     title={
                       patientSummary
-                        ? "Descargar audio MP3 (voz natural) de la explicación al paciente para adjuntar en WhatsApp"
-                        : "Primero genera la explicación para el paciente"
+                        ? "Descargar audio MP3 (voz natural) de la explicaciÃ³n al paciente para adjuntar en WhatsApp"
+                        : "Primero genera la explicaciÃ³n para el paciente"
                     }
                   >
                     {isDownloadingWhatsappAudio ? (
@@ -16614,10 +16614,10 @@ Ejemplo:
                     )}
                     <div className="text-left flex-1">
                       <span className="text-[10px] font-black uppercase tracking-wider block">
-                        {isDownloadingWhatsappAudio ? "Generando audio?" : "3. Audio explicación (MP3)"}
+                        {isDownloadingWhatsappAudio ? "Generando audioâ€¦" : "3. Audio explicaciÃ³n (MP3)"}
                       </span>
                       <span className="text-[8.5px] text-slate-400 font-mono leading-none block uppercase">
-                        Voz natural · 30?45 s · sin tratamiento por defecto
+                        Voz natural Â· todos los hallazgos del PDF Â· sin tratamiento por defecto
                       </span>
                     </div>
                   </button>
@@ -16641,10 +16641,10 @@ Ejemplo:
                   />
                   <div className="space-y-0.5">
                     <span className="text-[10.5px] font-black uppercase tracking-wider block">
-                      Incluir seguimiento en el audio (BI-RADS, TI-RADS?)
+                      Incluir seguimiento en el audio (BI-RADS, TI-RADSâ€¦)
                     </span>
                     <span className="text-[9px] text-slate-400 leading-normal block">
-                      Apagado por defecto: solo explica hallazgos. Actívelo si quiere mencionar control/categoría del scorecard.
+                      Apagado por defecto: solo explica hallazgos. ActÃ­velo si quiere mencionar control/categorÃ­a del scorecard.
                     </span>
                   </div>
                 </label>

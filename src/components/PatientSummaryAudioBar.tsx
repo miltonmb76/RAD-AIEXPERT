@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Download, Loader2, MessageSquare, Volume2, VolumeX } from "lucide-react";
 import {
   browserTtsSupported,
-  buildPatientSummarySpokenScript,
   downloadPatientSummaryAudioMp3,
   estimateSpokenSeconds,
+  fetchPatientSummaryAudioScript,
+  listPatientSummaryFindingLabels,
   speakPatientSummaryScript,
   stopPatientSummarySpeech,
   type PatientSummaryAudioInput,
@@ -35,13 +36,19 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
 }) => {
   const [includeFollowUp, setIncludeFollowUp] = useState(false);
   const [script, setScript] = useState("");
+  const [isBuildingScript, setIsBuildingScript] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mp3Url, setMp3Url] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const buildGen = useRef(0);
 
   const seconds = useMemo(() => estimateSpokenSeconds(script), [script]);
+  const findingCount = useMemo(
+    () => listPatientSummaryFindingLabels(patientSummary).length,
+    [patientSummary]
+  );
 
   useEffect(() => {
     return () => {
@@ -52,24 +59,35 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
-    // Rebuild script when summary or follow-up toggle changes
     if (!patientSummary) {
       setScript("");
       return;
     }
-    const next = buildPatientSummarySpokenScript(patientSummary, {
-      includeFollowUp,
-      followUpText: includeFollowUp ? followUpText : "",
-      studyType,
-      patientFirstName: patientName,
-      maxWords: includeFollowUp ? 125 : 110,
-    });
-    setScript(next);
+    const gen = ++buildGen.current;
+    setIsBuildingScript(true);
     setError(null);
     if (mp3Url) {
       URL.revokeObjectURL(mp3Url);
       setMp3Url(null);
     }
+    void fetchPatientSummaryAudioScript({
+      patientSummary,
+      includeFollowUp,
+      followUpText: includeFollowUp ? followUpText : "",
+      studyType,
+      patientFirstName: patientName,
+    })
+      .then((res) => {
+        if (buildGen.current !== gen) return;
+        setScript(res.script);
+      })
+      .catch((e: any) => {
+        if (buildGen.current !== gen) return;
+        setError(e?.message || "No se pudo armar el guion de audio.");
+      })
+      .finally(() => {
+        if (buildGen.current === gen) setIsBuildingScript(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mp3Url revoked when inputs change
   }, [patientSummary, includeFollowUp, followUpText, studyType, patientName]);
 
@@ -113,12 +131,21 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
   };
 
   const handleDownloadMp3 = async () => {
-    if (!script.trim()) return;
+    if (!patientSummary) return;
     setIsDownloading(true);
     setError(null);
     try {
+      // Refresh script so MP3 always covers every finding
+      const { script: fresh } = await fetchPatientSummaryAudioScript({
+        patientSummary,
+        includeFollowUp,
+        followUpText: includeFollowUp ? followUpText : "",
+        studyType,
+        patientFirstName: patientName,
+      });
+      setScript(fresh);
       const blob = await downloadPatientSummaryAudioMp3({
-        script,
+        script: fresh,
         includeFollowUp,
         filename: "explicacion-paciente-whatsapp.mp3",
       });
@@ -137,7 +164,7 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
   const handleWhatsAppText = () => {
     if (!script.trim()) return;
     const intro =
-      "*Audio / explicación breve para el paciente*\n_Solo hallazgos — sin plan de tratamiento" +
+      "*Audio / explicación breve para el paciente*\n_Todos los hallazgos del PDF — sin plan de tratamiento" +
       (includeFollowUp ? " (incluye seguimiento solicitado)_" : "_") +
       "\n\n";
     const url = buildWhatsAppSendUrl(whatsappPhone || "", intro + script);
@@ -152,13 +179,20 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <div>
           <div className="text-[10px] font-black uppercase tracking-wider text-emerald-300 font-mono flex items-center gap-1.5">
             <Volume2 className="h-3.5 w-3.5" />
-            Audio WhatsApp (30–45 s)
+            Audio WhatsApp (todos los hallazgos)
           </div>
           <p className="text-[10px] text-slate-400 mt-1 leading-relaxed max-w-xl">
-            Misma explicación del PDF corto, en voz. Por defecto{" "}
-            <span className="text-emerald-200/90">sin recomendaciones ni tratamiento</span>.
+            Mismo alcance que el PDF explicativo:{" "}
+            <span className="text-emerald-200/90">
+              {findingCount > 0
+                ? `${findingCount} hallazgo${findingCount === 1 ? "" : "s"}`
+                : "síntesis del estudio"}
+            </span>
             {script ? (
               <span className="text-slate-500"> · ~{seconds}s estimados</span>
+            ) : null}
+            {isBuildingScript ? (
+              <span className="text-emerald-400/80"> · preparando guion…</span>
             ) : null}
           </p>
         </div>
@@ -174,8 +208,12 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
       </div>
 
       {script ? (
-        <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/40 border border-slate-800/80 rounded-lg px-3 py-2 max-h-28 overflow-y-auto">
+        <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/40 border border-slate-800/80 rounded-lg px-3 py-2 max-h-36 overflow-y-auto">
           {script}
+        </p>
+      ) : isBuildingScript ? (
+        <p className="text-[11px] text-slate-500 italic px-1">
+          La IA está armando el resumen hablado de todos los hallazgos…
         </p>
       ) : null}
 
@@ -184,7 +222,8 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
           <button
             type="button"
             onClick={handlePlayBrowser}
-            className="text-[9px] font-black text-emerald-100 border border-emerald-500/40 bg-emerald-600/20 hover:bg-emerald-600/30 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5"
+            disabled={isBuildingScript || !script}
+            className="text-[9px] font-black text-emerald-100 border border-emerald-500/40 bg-emerald-600/20 hover:bg-emerald-600/30 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 disabled:opacity-50"
           >
             <Volume2 className="h-3 w-3" />
             Escuchar
@@ -202,7 +241,8 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <button
           type="button"
           onClick={handleCopy}
-          className="text-[9px] font-black text-slate-300 border border-slate-700 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 bg-slate-950/40"
+          disabled={!script}
+          className="text-[9px] font-black text-slate-300 border border-slate-700 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 bg-slate-950/40 disabled:opacity-50"
         >
           <Copy className="h-3 w-3" />
           Copiar guion
@@ -210,9 +250,9 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <button
           type="button"
           onClick={handleDownloadMp3}
-          disabled={isDownloading || !script}
+          disabled={isDownloading || isBuildingScript || !patientSummary}
           className="text-[9px] font-black text-slate-100 border border-slate-600 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 bg-slate-900 disabled:opacity-50"
-          title="Voz natural OpenAI (gpt-4o-mini-tts). Requiere OPENAI_API_KEY. Si falla, use Escuchar o Copiar guion."
+          title="Voz natural OpenAI. Guion con todos los hallazgos del PDF."
         >
           {isDownloading ? (
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -224,7 +264,8 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <button
           type="button"
           onClick={handleWhatsAppText}
-          className="text-[9px] font-black text-white border border-emerald-500/40 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 bg-emerald-950/50"
+          disabled={!script}
+          className="text-[9px] font-black text-white border border-emerald-500/40 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 bg-emerald-950/50 disabled:opacity-50"
           title="Abre WhatsApp con el guion. Adjunte el MP3 manualmente si lo descargó."
         >
           <MessageSquare className="h-3 w-3 text-emerald-400" />
@@ -236,8 +277,8 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p>
       ) : (
         <p className="text-[9px] text-slate-500 leading-snug">
-          Tip: «Escuchar» usa la voz del navegador (más robótica). «Descargar MP3» usa voz
-          natural OpenAI — adjúntelo en WhatsApp; el botón WhatsApp solo pega el guion.
+          El audio resume todos los hallazgos del PDF (no se corta en riñones si también hay
+          ovario, etc.). Sin recomendaciones salvo que marque seguimiento.
         </p>
       )}
 

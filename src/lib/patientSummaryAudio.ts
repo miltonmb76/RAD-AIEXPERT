@@ -27,12 +27,16 @@ export type BuildPatientAudioOpts = {
   followUpText?: string | null;
   studyType?: string | null;
   patientFirstName?: string | null;
-  /** Soft word budget for ~30–45 s of spoken Spanish (~2.5 words/s). */
+  /**
+   * Soft ceiling for spoken Spanish. Findings are NEVER dropped to fit —
+   * overview/summary are shortened first. Default ~400 words (~2.5–3 min).
+   */
   maxWords?: number;
 };
 
+/** Advice / treatment language — includes Spanish conjugations (sugiere ≠ suger*). */
 const FOLLOW_UP_RE =
-  /\b(recomend\w*|suger\w*|tratamiento|terap[eé]ut\w*|medicaci[oó]n|cirug[ií]a|biopsia|intervenci[oó]n|deber[ií]a|debe\b|hay que\b|conviene\b|es importante que\b|seguimiento|control (en|a los|cada)|pr[oó]xim[oa]s?\s+pasos|qu[eé] hacer|manejo|derivaci[oó]n|referir|urgencias?|alarma|h[aá]bitos?|ejercicios?|cuidados?|preguntas?\s+para\s+su\s+m[eé]dico|plan de (manejo|seguimiento|tratamiento))\b/i;
+  /\b(recomend\w*|sugier\w*|suger\w*|tratamiento|terap[eé]ut\w*|medicaci[oó]n|cirug[ií]a|biopsia|intervenci[oó]n|deber[ií]a|debe\b|hay que\b|conviene\b|es importante que\b|seguimiento|control (en|a los|cada|ecogr[aá]fico|peri[oó]dico)|pr[oó]xim[oa]s?\s+pasos|qu[eé] hacer|manejo|derivaci[oó]n|referir|urgencias?|alarma|h[aá]bitos?|ejercicios?|cuidados?|preguntas?\s+para\s+su\s+m[eé]dico|plan de (manejo|seguimiento|tratamiento))\b/i;
 
 const CLASSIFICATION_KEEP_RE =
   /\b(bi-?rads|ti-?rads|bosniak|metavir|fleischner|acr|categoria|categor[ií]a|grado|estadio)\b/i;
@@ -184,8 +188,16 @@ function findingPlain(f: NonNullable<PatientSummaryAudioInput["keyFindings"]>[nu
   );
 }
 
+/** Keep the first N sentences (for shortening overview/summary without dropping findings). */
+export function firstSentences(text: string, maxSentences: number): string {
+  const parts = splitSentences(text);
+  if (!parts.length) return "";
+  return cleanWhitespace(parts.slice(0, Math.max(1, maxSentences)).join(" "));
+}
+
 /**
- * Build a short spoken script (~30–45 s) from the patient summary payload.
+ * Build a spoken script from the same patient-summary payload as the PDF.
+ * Covers EVERY keyFinding (ovario, riñones, etc.) — never truncates mid-list.
  */
 export function buildPatientSummarySpokenScript(
   summary: PatientSummaryAudioInput | null | undefined,
@@ -193,68 +205,198 @@ export function buildPatientSummarySpokenScript(
 ): string {
   if (!summary) return "";
   const includeFollowUp = opts.includeFollowUp === true;
-  const maxWords = Math.max(60, Math.min(160, opts.maxWords ?? 110));
+  // Soft ceiling only; findings always win over overview/summary length.
+  const maxWords = Math.max(120, Math.min(600, opts.maxWords ?? 400));
 
-  const chunks: string[] = [];
   const name = cleanWhitespace(String(opts.patientFirstName || "").split(/\s+/)[0] || "");
   const study = cleanWhitespace(String(opts.studyType || ""));
+  const greeting = name ? `Hola ${name}.` : "Hola.";
 
-  if (name) {
-    chunks.push(`Hola${name ? ` ${name}` : ""}.`);
-  } else {
-    chunks.push("Hola.");
-  }
+  const findings = Array.isArray(summary.keyFindings)
+    ? summary.keyFindings.filter(Boolean)
+    : [];
 
-  const overview = filterSpokenSentences(
-    String(summary.studyOverview || ""),
-    includeFollowUp
-  );
-  if (overview) {
-    chunks.push(overview);
-  } else if (study) {
-    chunks.push(`Le explicamos de forma breve su estudio de ${study}.`);
-  } else {
-    chunks.push("Le explicamos de forma breve los hallazgos de su estudio.");
-  }
-
-  const body = filterSpokenSentences(String(summary.summary || ""), includeFollowUp);
-  if (body) chunks.push(body);
-
-  const findings = Array.isArray(summary.keyFindings) ? summary.keyFindings.filter(Boolean) : [];
   const findingLines: string[] = [];
-  for (const f of findings.slice(0, 3)) {
+  for (const f of findings) {
     const title = cleanWhitespace(String(f?.title || f?.finding || ""));
-    const plain = filterSpokenSentences(findingPlain(f), includeFollowUp);
+    // One clear sentence per finding (same content family as PDF cards)
+    const plain = firstSentences(
+      filterSpokenSentences(findingPlain(f), includeFollowUp),
+      2
+    );
     if (!title && !plain) continue;
     if (title && plain) findingLines.push(`Sobre ${title}: ${plain}`);
     else if (plain) findingLines.push(plain);
-    else if (title) findingLines.push(`Hallazgo: ${title}.`);
-  }
-  if (findingLines.length) {
-    chunks.push(findingLines.join(" "));
+    else findingLines.push(`Sobre ${title}.`);
   }
 
-  if (includeFollowUp) {
-    const follow = filterSpokenSentences(
-      String(opts.followUpText || "").trim(),
-      true
-    );
-    if (follow) {
-      chunks.push(`Sobre el seguimiento: ${follow}`);
-    }
-  }
+  const closing = includeFollowUp
+    ? "El informe formal queda con su médico tratante."
+    : "Este audio resume lo que se vio en el estudio, igual que la explicación escrita. El informe formal y cualquier decisión de seguimiento quedan con su médico tratante.";
 
-  chunks.push(
+  const follow =
     includeFollowUp
-      ? "El informe formal queda con su médico tratante."
-      : "Este audio solo explica lo que se vio en el estudio. El informe formal y cualquier decisión de seguimiento quedan con su médico tratante."
-  );
+      ? firstSentences(
+          filterSpokenSentences(String(opts.followUpText || "").trim(), true),
+          3
+        )
+      : "";
 
-  let script = cleanWhitespace(chunks.join(" "));
-  // TTS-safe: "Grado I" → "Grado uno" (not letter "i") — before trim so budget is honest
-  script = expandRomanNumeralsForSpeech(script);
-  script = trimToWords(script, maxWords);
+  // Shorten overview/summary first if needed — never drop findingLines.
+  let overviewSentences = 2;
+  let summarySentences = findings.length >= 4 ? 2 : 3;
+
+  const assemble = (ovN: number, sumN: number): string => {
+    const parts: string[] = [greeting];
+    const overviewRaw = filterSpokenSentences(
+      String(summary.studyOverview || ""),
+      includeFollowUp
+    );
+    const overview = overviewRaw
+      ? firstSentences(overviewRaw, ovN)
+      : study
+        ? `Le explicamos los hallazgos de su estudio de ${study}.`
+        : "Le explicamos los hallazgos de su estudio.";
+    parts.push(overview);
+
+    const bodyRaw = filterSpokenSentences(String(summary.summary || ""), includeFollowUp);
+    const body = bodyRaw ? firstSentences(bodyRaw, sumN) : "";
+    // If we already have a full finding list, keep summary brief to avoid redundancy
+    if (body && findingLines.length === 0) parts.push(body);
+    else if (body && findingLines.length > 0 && sumN > 0) parts.push(body);
+
+    if (findingLines.length) {
+      parts.push(
+        findingLines.length === 1
+          ? findingLines[0]
+          : `Estos son los hallazgos principales. ${findingLines.join(" ")}`
+      );
+    }
+
+    if (follow) parts.push(`Sobre el seguimiento: ${follow}`);
+    parts.push(closing);
+    return expandRomanNumeralsForSpeech(cleanWhitespace(parts.join(" ")));
+  };
+
+  let script = assemble(overviewSentences, summarySentences);
+  // Compress intro only while over budget — keep all findings
+  while (wordCount(script) > maxWords && (overviewSentences > 1 || summarySentences > 0)) {
+    if (summarySentences > 0) summarySentences -= 1;
+    else if (overviewSentences > 1) overviewSentences -= 1;
+    script = assemble(overviewSentences, summarySentences);
+  }
+  // Last resort: still do not drop findings; allow slightly over budget
   return script;
+}
+
+/** Titles of findings the spoken script is expected to cover (for QA / AI prompts). */
+export function listPatientSummaryFindingLabels(
+  summary: PatientSummaryAudioInput | null | undefined
+): string[] {
+  if (!summary || !Array.isArray(summary.keyFindings)) return [];
+  return summary.keyFindings
+    .filter(Boolean)
+    .map((f) => cleanWhitespace(String(f?.title || f?.finding || "")))
+    .filter(Boolean);
+}
+
+/** Accent-insensitive lowercase for finding-coverage checks (ovário ≈ ovario). */
+export function normalizeSpeechMatchKey(text: string): string {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Significant tokens from a finding title (skip short fillers). */
+function findingMatchTokens(label: string): string[] {
+  const stop = new Set([
+    "de",
+    "del",
+    "la",
+    "el",
+    "los",
+    "las",
+    "un",
+    "una",
+    "y",
+    "en",
+    "con",
+    "por",
+    "para",
+    "al",
+    "a",
+  ]);
+  return normalizeSpeechMatchKey(label)
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 4 && !stop.has(t));
+}
+
+/** True if the spoken script already mentions this finding label. */
+export function scriptMentionsFindingLabel(script: string, label: string): boolean {
+  const hay = normalizeSpeechMatchKey(script);
+  if (!hay || !label) return false;
+  const full = normalizeSpeechMatchKey(label);
+  if (full.length >= 4 && hay.includes(full)) return true;
+  // Title may be long ("Quiste en ovario izquierdo") — require a distinctive token
+  const tokens = findingMatchTokens(label);
+  if (!tokens.length) {
+    const short = full.slice(0, Math.min(12, full.length));
+    return short.length >= 3 && hay.includes(short);
+  }
+  // Prefer organ/lesion tokens (ovario, rinon, higado…) — any strong token counts
+  return tokens.some((t) => hay.includes(t));
+}
+
+function findingMatchesMissingLabel(title: string, missingLabel: string): boolean {
+  const a = normalizeSpeechMatchKey(missingLabel);
+  const b = normalizeSpeechMatchKey(title);
+  if (!a || !b) return false;
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  return findingMatchTokens(missingLabel).some((t) => b.includes(t));
+}
+
+/**
+ * Ensure a spoken script covers every keyFinding (same scope as the patient PDF).
+ * Appends compact local lines for any omitted labels; strips advice unless opted in.
+ */
+export function reconcileSpokenScriptWithFindings(
+  script: string,
+  summary: PatientSummaryAudioInput | null | undefined,
+  opts: { includeFollowUp?: boolean } = {}
+): { script: string; missingLabels: string[]; appended: number } {
+  const includeFollowUp = opts.includeFollowUp === true;
+  let out = cleanWhitespace(script);
+  if (!includeFollowUp) {
+    out = filterSpokenSentences(out, false);
+  }
+  const labels = listPatientSummaryFindingLabels(summary);
+  const missing = labels.filter((label) => !scriptMentionsFindingLabel(out, label));
+  if (!missing.length || !summary || !Array.isArray(summary.keyFindings)) {
+    return {
+      script: expandRomanNumeralsForSpeech(out),
+      missingLabels: missing,
+      appended: 0,
+    };
+  }
+  const extras: string[] = [];
+  for (const f of summary.keyFindings) {
+    const title = cleanWhitespace(String(f?.title || f?.finding || ""));
+    if (!title) continue;
+    if (!missing.some((m) => findingMatchesMissingLabel(title, m))) continue;
+    const plain = firstSentences(filterSpokenSentences(findingPlain(f), includeFollowUp), 2);
+    extras.push(plain ? `Sobre ${title}: ${plain}` : `Sobre ${title}.`);
+  }
+  if (extras.length) {
+    out = cleanWhitespace(`${out} ${extras.join(" ")}`);
+  }
+  return {
+    script: expandRomanNumeralsForSpeech(out),
+    missingLabels: missing,
+    appended: extras.length,
+  };
 }
 
 export function estimateSpokenSeconds(script: string, wordsPerSecond = 2.4): number {
@@ -310,6 +452,59 @@ export function stopPatientSummarySpeech(): void {
       /* ignore */
     }
   }
+}
+
+/**
+ * Ask the server for a spoken script that covers ALL PDF findings (AI + fallback).
+ */
+export async function fetchPatientSummaryAudioScript(opts: {
+  patientSummary: PatientSummaryAudioInput;
+  includeFollowUp?: boolean;
+  followUpText?: string | null;
+  studyType?: string | null;
+  patientFirstName?: string | null;
+}): Promise<{ script: string; provider: string; findingCount: number }> {
+  const res = await fetch("/api/patient-summary-audio-script", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      patientSummary: opts.patientSummary,
+      includeFollowUp: opts.includeFollowUp === true,
+      followUpText: opts.followUpText || "",
+      studyType: opts.studyType || "",
+      patientFirstName: opts.patientFirstName || "",
+    }),
+  });
+  const json = await res.json().catch(() => ({} as any));
+  if (!res.ok || !json?.success || !json?.script) {
+    // Local fallback — still covers every keyFinding
+    const local = buildPatientSummarySpokenScript(opts.patientSummary, {
+      includeFollowUp: opts.includeFollowUp,
+      followUpText: opts.followUpText,
+      studyType: opts.studyType,
+      patientFirstName: opts.patientFirstName,
+      maxWords: 450,
+    });
+    const reconciled = reconcileSpokenScriptWithFindings(local, opts.patientSummary, {
+      includeFollowUp: opts.includeFollowUp,
+    });
+    return {
+      script: reconciled.script,
+      provider: "local-fallback",
+      findingCount: listPatientSummaryFindingLabels(opts.patientSummary).length,
+    };
+  }
+  // Defense in depth: re-check coverage / strip advice on the client too
+  const reconciled = reconcileSpokenScriptWithFindings(
+    String(json.script),
+    opts.patientSummary,
+    { includeFollowUp: opts.includeFollowUp }
+  );
+  return {
+    script: reconciled.script,
+    provider: String(json.provider || "server"),
+    findingCount: Number(json.findingCount) || 0,
+  };
 }
 
 /**

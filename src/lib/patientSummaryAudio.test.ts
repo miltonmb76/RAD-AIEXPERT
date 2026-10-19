@@ -4,11 +4,14 @@ import {
   expandRomanNumeralsForSpeech,
   filterSpokenSentences,
   isFollowUpLikeSentence,
+  reconcileSpokenScriptWithFindings,
+  scriptMentionsFindingLabel,
 } from "./patientSummaryAudio";
 
 describe("patientSummaryAudio", () => {
   it("flags follow-up / treatment sentences", () => {
     expect(isFollowUpLikeSentence("Se recomienda control en 6 meses.")).toBe(true);
+    expect(isFollowUpLikeSentence("Se sugiere control.")).toBe(true);
     expect(isFollowUpLikeSentence("Hay un nódulo sólido de 8 mm en mama derecha.")).toBe(
       false
     );
@@ -22,9 +25,15 @@ describe("patientSummaryAudio", () => {
     expect(out.toLowerCase()).toContain("nódulo");
     expect(out.toLowerCase()).not.toContain("biopsia");
     expect(out.toLowerCase()).toContain("bi-rads");
+    const sugiere = filterSpokenSentences(
+      "Lesión quística de 3 cm. Se sugiere control.",
+      false
+    );
+    expect(sugiere.toLowerCase()).toContain("quística");
+    expect(sugiere.toLowerCase()).not.toMatch(/sugiere|control/);
   });
 
-  it("builds a short script without follow-up unless opted in", () => {
+  it("builds a script without follow-up unless opted in", () => {
     const script = buildPatientSummarySpokenScript(
       {
         studyOverview: "Se realizó ecografía de mama.",
@@ -36,7 +45,7 @@ describe("patientSummaryAudio", () => {
           },
         ],
       },
-      { includeFollowUp: false, maxWords: 120 }
+      { includeFollowUp: false }
     );
     expect(script.toLowerCase()).toContain("ecografía");
     expect(script.toLowerCase()).not.toMatch(/recomiend|control en 6/);
@@ -51,11 +60,59 @@ describe("patientSummaryAudio", () => {
       {
         includeFollowUp: true,
         followUpText: "BI-RADS 3: control ecográfico en 6 meses.",
-        maxWords: 140,
       }
     );
     expect(withFollow.toLowerCase()).toContain("seguimiento");
     expect(withFollow.toLowerCase()).toContain("bi-rads");
+  });
+
+  it("covers every keyFinding (does not stop at early organs)", () => {
+    const script = buildPatientSummarySpokenScript(
+      {
+        studyOverview: "Ecografía de abdomen y pelvis.",
+        summary: "Se evaluaron hígado, riñones y anexos. Se recomienda control en 6 meses.",
+        keyFindings: [
+          {
+            title: "Hígado",
+            simplifiedExplanation: "Parénquima homogéneo.",
+          },
+          {
+            title: "Riñón derecho",
+            simplifiedExplanation: "Sin hidronefrosis.",
+          },
+          {
+            title: "Ovario izquierdo",
+            simplifiedExplanation: "Lesión quística de 3 cm. Se sugiere control.",
+          },
+        ],
+      },
+      { includeFollowUp: false, maxWords: 200 }
+    );
+    expect(script.toLowerCase()).toContain("hígado");
+    expect(script.toLowerCase()).toContain("riñón");
+    expect(script.toLowerCase()).toContain("ovario");
+    expect(script.toLowerCase()).toContain("quística");
+    expect(script.toLowerCase()).not.toMatch(/recomend|sugiere|control en 6/);
+  });
+
+  it("reconciles AI scripts that omit later findings (e.g. ovary after kidneys)", () => {
+    const summary = {
+      studyOverview: "Ecografía de abdomen y pelvis.",
+      summary: "Hallazgos abdominales.",
+      keyFindings: [
+        { title: "Riñón derecho", simplifiedExplanation: "Sin litiasis." },
+        { title: "Ovario izquierdo", simplifiedExplanation: "Lesión quística de 3 cm." },
+      ],
+    };
+    const incomplete =
+      "Hola. Se evaluó el abdomen. Sobre Riñón derecho: Sin litiasis. El informe queda con su médico.";
+    expect(scriptMentionsFindingLabel(incomplete, "Ovario izquierdo")).toBe(false);
+    const { script, appended } = reconcileSpokenScriptWithFindings(incomplete, summary, {
+      includeFollowUp: false,
+    });
+    expect(appended).toBeGreaterThan(0);
+    expect(script.toLowerCase()).toContain("ovario");
+    expect(script.toLowerCase()).toContain("quística");
   });
 
   it("expands Roman numerals so TTS does not say letter i", () => {

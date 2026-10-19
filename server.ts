@@ -20,11 +20,19 @@ import {
 } from "./src/lib/findingsInfographic";
 import { normalizeDominantLesionCardData } from "./src/lib/dominantLesionCard";
 import {
+  generatePatientSummaryAudioScriptOpenAI,
   generatePatientSummaryOpenAI,
   hasOpenAiApiKey,
   normalizePatientSummaryPayload,
   synthesizePatientSummarySpeech,
 } from "./src/lib/openaiPatientSummary";
+import {
+  buildPatientSummarySpokenScript,
+  expandRomanNumeralsForSpeech,
+  listPatientSummaryFindingLabels,
+  reconcileSpokenScriptWithFindings,
+  scriptMentionsFindingLabel,
+} from "./src/lib/patientSummaryAudio";
 import {
   buildInfographicLateralityPromptBlock,
   detectInfographicViewOrientation,
@@ -3820,6 +3828,100 @@ Devuelve JSON con:
   } catch (error: any) {
     console.error("Error en /api/generate-patient-summary:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * Build a spoken patient-audio script that covers ALL PDF findings.
+ * Prefers OpenAI; falls back to local builder (still all keyFindings).
+ * POST /api/patient-summary-audio-script
+ * body: { patientSummary, includeFollowUp?, followUpText?, studyType?, patientFirstName? }
+ */
+app.post("/api/patient-summary-audio-script", async (req: express.Request, res: express.Response) => {
+  try {
+    const patientSummary = req.body?.patientSummary;
+    if (!patientSummary) {
+      return res.status(400).json({
+        success: false,
+        error: "Se requiere patientSummary (misma explicación que el PDF).",
+      });
+    }
+    const includeFollowUp = req.body?.includeFollowUp === true;
+    const followUpText = String(req.body?.followUpText || "");
+    const studyType = String(req.body?.studyType || "");
+    const patientFirstName = String(req.body?.patientFirstName || "");
+    const requiredLabels = listPatientSummaryFindingLabels(patientSummary);
+
+    let script = "";
+    let provider: "openai" | "local" = "local";
+    let model = "local-builder";
+
+    if (hasOpenAiApiKey()) {
+      try {
+        const ai = await generatePatientSummaryAudioScriptOpenAI({
+          patientSummary,
+          includeFollowUp,
+          followUpText,
+          studyType,
+          patientFirstName,
+        });
+        script = expandRomanNumeralsForSpeech(ai.script);
+        provider = "openai";
+        model = ai.model;
+      } catch (openaiErr: any) {
+        console.warn(
+          "Guion audio paciente: OpenAI falló; usando builder local.",
+          openaiErr?.message || openaiErr
+        );
+      }
+    }
+
+    // If AI omitted many findings (e.g. stopped at riñones), prefer full local PDF-scope script
+    if (script && requiredLabels.length >= 2) {
+      const covered = requiredLabels.filter((label) =>
+        scriptMentionsFindingLabel(script, label)
+      ).length;
+      const coverage = covered / requiredLabels.length;
+      if (coverage < 0.7) {
+        console.warn(
+          `Guion audio paciente: cobertura IA ${covered}/${requiredLabels.length}; usando builder local completo.`
+        );
+        script = "";
+      }
+    }
+
+    if (!script) {
+      script = buildPatientSummarySpokenScript(patientSummary, {
+        includeFollowUp,
+        followUpText,
+        studyType,
+        patientFirstName,
+        maxWords: 450,
+      });
+      provider = "local";
+      model = "local-builder";
+    }
+
+    // Strip advice (unless opted in) and append any still-missing findings
+    const reconciled = reconcileSpokenScriptWithFindings(script, patientSummary, {
+      includeFollowUp,
+    });
+    script = reconciled.script;
+
+    return res.json({
+      success: true,
+      script,
+      provider,
+      model,
+      findingCount: requiredLabels.length,
+      missingAppended: reconciled.appended,
+    });
+  } catch (error: any) {
+    console.error("Error en /api/patient-summary-audio-script:", error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || "No se pudo generar el guion de audio.",
+    });
   }
 });
 
