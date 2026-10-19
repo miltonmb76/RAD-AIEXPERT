@@ -44,6 +44,76 @@ function cleanWhitespace(s: string): string {
     .trim();
 }
 
+/** Roman → Spanish cardinals for TTS (avoids "Grado I" spoken as "Grado i"). */
+const ROMAN_TO_SPOKEN: Record<string, string> = {
+  I: "uno",
+  II: "dos",
+  III: "tres",
+  IV: "cuatro",
+  V: "cinco",
+  VI: "seis",
+  VII: "siete",
+  VIII: "ocho",
+  IX: "nueve",
+  X: "diez",
+  XI: "once",
+  XII: "doce",
+};
+
+const ROMAN_TOKEN_RE = /^(X{0,3})(IX|IV|V?I{0,3})$/i;
+
+function romanTokenToSpoken(token: string): string | null {
+  const t = String(token || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[.\u00BA\u00B0]/g, ""); // "I." / "Iº"
+  if (!t || !ROMAN_TOKEN_RE.test(t)) return null;
+  return ROMAN_TO_SPOKEN[t] || null;
+}
+
+/**
+ * Expand medical Roman numerals so TTS says "grado uno" not "grado i".
+ * Targets Grado/estadio/tipo/clase/fase/nivel + standalone II–XII; single "I"
+ * only after those clinical prefixes (avoids English pronoun false positives).
+ */
+export function expandRomanNumeralsForSpeech(text: string): string {
+  let s = String(text || "");
+  if (!s) return "";
+
+  // "grado I-II" / "estadio II/III" → "grado uno a dos"
+  s = s.replace(
+    /\b(grado|estadio|tipo|clase|fase|nivel|grupo|categor[ií]a|lesi[oó]n|metavir|bosniak|neer)\s+([IVX]{1,4})(?:\s*[–—\-/]\s*([IVX]{1,4}))?\b/gi,
+    (_m, prefix: string, a: string, b?: string) => {
+      const left = romanTokenToSpoken(a);
+      const right = b ? romanTokenToSpoken(b) : null;
+      if (!left) return _m;
+      if (right) return `${prefix} ${left} a ${right}`;
+      return `${prefix} ${left}`;
+    }
+  );
+
+  // Trailing "… grado I." already handled; also "FIGURA I" / "Panel II"
+  s = s.replace(
+    /\b(figura|panel|anexo|hallazgo)\s+([IVX]{1,4})\b/gi,
+    (_m, prefix: string, rom: string) => {
+      const spoken = romanTokenToSpoken(rom);
+      return spoken ? `${prefix} ${spoken}` : _m;
+    }
+  );
+
+  // Remaining multi-character Romans (II–XII) anywhere as whole tokens
+  s = s.replace(/\b([IVX]{2,4})\b/g, (m) => romanTokenToSpoken(m) || m);
+
+  // Lone "I" / "I." only when clearly a grade after punctuation/space and
+  // preceded earlier in the clause by a clinical grade word (fallback pass).
+  s = s.replace(
+    /\b(grado|estadio|tipo|clase|fase|nivel|grupo)\s+I\b/gi,
+    (_m, prefix: string) => `${prefix} uno`
+  );
+
+  return s;
+}
+
 function splitSentences(text: string): string[] {
   const t = cleanWhitespace(text);
   if (!t) return [];
@@ -181,6 +251,8 @@ export function buildPatientSummarySpokenScript(
   );
 
   let script = cleanWhitespace(chunks.join(" "));
+  // TTS-safe: "Grado I" → "Grado uno" (not letter "i") — before trim so budget is honest
+  script = expandRomanNumeralsForSpeech(script);
   script = trimToWords(script, maxWords);
   return script;
 }

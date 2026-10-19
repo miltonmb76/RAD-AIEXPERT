@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPatientSummarySpokenScript,
+  expandRomanNumeralsForSpeech,
   filterSpokenSentences,
   isFollowUpLikeSentence,
 } from "./patientSummaryAudio";
@@ -55,5 +56,36 @@ describe("patientSummaryAudio", () => {
     );
     expect(withFollow.toLowerCase()).toContain("seguimiento");
     expect(withFollow.toLowerCase()).toContain("bi-rads");
+  });
+
+  it("expands Roman numerals so TTS does not say letter i", () => {
+    expect(expandRomanNumeralsForSpeech("Fibrosis Grado I.")).toBe(
+      "Fibrosis Grado uno."
+    );
+    expect(expandRomanNumeralsForSpeech("estadio II a III")).toMatch(
+      /estadio dos a tres/i
+    );
+    expect(expandRomanNumeralsForSpeech("tipo IV")).toMatch(/tipo cuatro/i);
+    expect(expandRomanNumeralsForSpeech("Grado I-II")).toMatch(
+      /Grado uno a dos/i
+    );
+
+    const script = buildPatientSummarySpokenScript(
+      {
+        studyOverview: "Ecografía hepática.",
+        summary: "Cambios compatibles con fibrosis Grado I.",
+        keyFindings: [
+          {
+            title: "Hígado",
+            simplifiedExplanation: "Patrón de fibrosis grado II.",
+          },
+        ],
+      },
+      { includeFollowUp: false, maxWords: 140 }
+    );
+    expect(script).toMatch(/grado uno/i);
+    expect(script).toMatch(/grado dos/i);
+    expect(script).not.toMatch(/\bGrado I\b/);
+    expect(script).not.toMatch(/\bgrado II\b/);
   });
 });
