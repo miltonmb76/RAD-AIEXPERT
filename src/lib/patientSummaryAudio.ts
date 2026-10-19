@@ -1,6 +1,9 @@
 /**
- * Spoken script for patient-summary WhatsApp audio (~30–45 s).
- * By default: study + findings only — no recommendations / treatment / follow-up.
+ * Spoken script for patient-summary WhatsApp audio.
+ * Primary source = first 2 PDF sections:
+ *   1) «Qué estudio se le realizó» (studyOverview)
+ *   2) «En pocas palabras» (summary)
+ * By default: no recommendations / treatment / follow-up.
  * Opt-in: includeFollowUp adds explicit follow-up text (BI-RADS, TI-RADS, etc.).
  */
 
@@ -28,15 +31,16 @@ export type BuildPatientAudioOpts = {
   studyType?: string | null;
   patientFirstName?: string | null;
   /**
-   * Soft ceiling for spoken Spanish. Findings are NEVER dropped to fit —
-   * overview/summary are shortened first. Default ~400 words (~2.5–3 min).
+   * Soft ceiling for spoken Spanish. The two PDF sections are kept intact
+   * whenever possible; only trimmed as a last resort for TTS limits.
+   * Default ~450 words.
    */
   maxWords?: number;
 };
 
-/** Advice / treatment language — includes Spanish conjugations (sugiere ≠ suger*). */
+/** Advice / treatment language — conjugations: recomienda ≠ recomend*, sugiere ≠ suger*. */
 const FOLLOW_UP_RE =
-  /\b(recomend\w*|sugier\w*|suger\w*|tratamiento|terap[eé]ut\w*|medicaci[oó]n|cirug[ií]a|biopsia|intervenci[oó]n|deber[ií]a|debe\b|hay que\b|conviene\b|es importante que\b|seguimiento|control (en|a los|cada|ecogr[aá]fico|peri[oó]dico)|pr[oó]xim[oa]s?\s+pasos|qu[eé] hacer|manejo|derivaci[oó]n|referir|urgencias?|alarma|h[aá]bitos?|ejercicios?|cuidados?|preguntas?\s+para\s+su\s+m[eé]dico|plan de (manejo|seguimiento|tratamiento))\b/i;
+  /\b(recomiend\w*|recomend\w*|sugier\w*|suger\w*|tratamiento|terap[eé]ut\w*|medicaci[oó]n|cirug[ií]a|biopsia|intervenci[oó]n|deber[ií]a|debe\b|hay que\b|conviene\b|es importante que\b|seguimiento|control (en|a los|cada|ecogr[aá]fico|peri[oó]dico)|pr[oó]xim[oa]s?\s+pasos|qu[eé] hacer|manejo|derivaci[oó]n|referir|urgencias?|alarma|h[aá]bitos?|ejercicios?|cuidados?|preguntas?\s+para\s+su\s+m[eé]dico|plan de (manejo|seguimiento|tratamiento))\b/i;
 
 const CLASSIFICATION_KEEP_RE =
   /\b(bi-?rads|ti-?rads|bosniak|metavir|fleischner|acr|categoria|categor[ií]a|grado|estadio)\b/i;
@@ -196,8 +200,9 @@ export function firstSentences(text: string, maxSentences: number): string {
 }
 
 /**
- * Build a spoken script from the same patient-summary payload as the PDF.
- * Covers EVERY keyFinding (ovario, riñones, etc.) — never truncates mid-list.
+ * Build a spoken script from the first 2 sections of the patient PDF:
+ * «Qué estudio se le realizó» + «En pocas palabras».
+ * Falls back to keyFindings only if both sections are empty.
  */
 export function buildPatientSummarySpokenScript(
   summary: PatientSummaryAudioInput | null | undefined,
@@ -205,34 +210,56 @@ export function buildPatientSummarySpokenScript(
 ): string {
   if (!summary) return "";
   const includeFollowUp = opts.includeFollowUp === true;
-  // Soft ceiling only; findings always win over overview/summary length.
-  const maxWords = Math.max(120, Math.min(600, opts.maxWords ?? 400));
+  const maxWords = Math.max(80, Math.min(700, opts.maxWords ?? 450));
 
   const name = cleanWhitespace(String(opts.patientFirstName || "").split(/\s+/)[0] || "");
   const study = cleanWhitespace(String(opts.studyType || ""));
   const greeting = name ? `Hola ${name}.` : "Hola.";
 
-  const findings = Array.isArray(summary.keyFindings)
-    ? summary.keyFindings.filter(Boolean)
-    : [];
+  // Section 1 — Qué estudio se le realizó
+  const overview = filterSpokenSentences(
+    String(summary.studyOverview || ""),
+    includeFollowUp
+  );
+  // Section 2 — En pocas palabras
+  const inFewWords = filterSpokenSentences(String(summary.summary || ""), includeFollowUp);
 
-  const findingLines: string[] = [];
-  for (const f of findings) {
-    const title = cleanWhitespace(String(f?.title || f?.finding || ""));
-    // One clear sentence per finding (same content family as PDF cards)
-    const plain = firstSentences(
-      filterSpokenSentences(findingPlain(f), includeFollowUp),
-      2
-    );
-    if (!title && !plain) continue;
-    if (title && plain) findingLines.push(`Sobre ${title}: ${plain}`);
-    else if (plain) findingLines.push(plain);
-    else findingLines.push(`Sobre ${title}.`);
+  const parts: string[] = [greeting];
+  if (overview) {
+    parts.push(overview);
+  } else if (study) {
+    parts.push(`Le explicamos de forma breve su estudio de ${study}.`);
+  } else {
+    parts.push("Le explicamos de forma breve los hallazgos de su estudio.");
   }
 
-  const closing = includeFollowUp
-    ? "El informe formal queda con su médico tratante."
-    : "Este audio resume lo que se vio en el estudio, igual que la explicación escrita. El informe formal y cualquier decisión de seguimiento quedan con su médico tratante.";
+  if (inFewWords) {
+    parts.push(inFewWords);
+  } else {
+    // Fallback: cards only when «En pocas palabras» is missing
+    const findings = Array.isArray(summary.keyFindings)
+      ? summary.keyFindings.filter(Boolean)
+      : [];
+    const findingLines: string[] = [];
+    for (const f of findings) {
+      const title = cleanWhitespace(String(f?.title || f?.finding || ""));
+      const plain = firstSentences(
+        filterSpokenSentences(findingPlain(f), includeFollowUp),
+        2
+      );
+      if (!title && !plain) continue;
+      if (title && plain) findingLines.push(`Sobre ${title}: ${plain}`);
+      else if (plain) findingLines.push(plain);
+      else findingLines.push(`Sobre ${title}.`);
+    }
+    if (findingLines.length) {
+      parts.push(
+        findingLines.length === 1
+          ? findingLines[0]
+          : `En pocas palabras: ${findingLines.join(" ")}`
+      );
+    }
+  }
 
   const follow =
     includeFollowUp
@@ -241,52 +268,33 @@ export function buildPatientSummarySpokenScript(
           3
         )
       : "";
+  if (follow) parts.push(`Sobre el seguimiento: ${follow}`);
 
-  // Shorten overview/summary first if needed — never drop findingLines.
-  let overviewSentences = 2;
-  let summarySentences = findings.length >= 4 ? 2 : 3;
+  parts.push(
+    includeFollowUp
+      ? "El informe formal queda con su médico tratante."
+      : "Este audio resume las dos primeras secciones de su explicación escrita. El informe formal y cualquier decisión de seguimiento quedan con su médico tratante."
+  );
 
-  const assemble = (ovN: number, sumN: number): string => {
-    const parts: string[] = [greeting];
-    const overviewRaw = filterSpokenSentences(
-      String(summary.studyOverview || ""),
-      includeFollowUp
-    );
-    const overview = overviewRaw
-      ? firstSentences(overviewRaw, ovN)
-      : study
-        ? `Le explicamos los hallazgos de su estudio de ${study}.`
-        : "Le explicamos los hallazgos de su estudio.";
-    parts.push(overview);
-
-    const bodyRaw = filterSpokenSentences(String(summary.summary || ""), includeFollowUp);
-    const body = bodyRaw ? firstSentences(bodyRaw, sumN) : "";
-    // If we already have a full finding list, keep summary brief to avoid redundancy
-    if (body && findingLines.length === 0) parts.push(body);
-    else if (body && findingLines.length > 0 && sumN > 0) parts.push(body);
-
-    if (findingLines.length) {
-      parts.push(
-        findingLines.length === 1
-          ? findingLines[0]
-          : `Estos son los hallazgos principales. ${findingLines.join(" ")}`
-      );
-    }
-
-    if (follow) parts.push(`Sobre el seguimiento: ${follow}`);
-    parts.push(closing);
-    return expandRomanNumeralsForSpeech(cleanWhitespace(parts.join(" ")));
-  };
-
-  let script = assemble(overviewSentences, summarySentences);
-  // Compress intro only while over budget — keep all findings
-  while (wordCount(script) > maxWords && (overviewSentences > 1 || summarySentences > 0)) {
-    if (summarySentences > 0) summarySentences -= 1;
-    else if (overviewSentences > 1) overviewSentences -= 1;
-    script = assemble(overviewSentences, summarySentences);
+  let script = expandRomanNumeralsForSpeech(cleanWhitespace(parts.join(" ")));
+  // Last resort for TTS length — keep as much of the two sections as possible
+  if (wordCount(script) > maxWords) {
+    script = expandRomanNumeralsForSpeech(trimToWords(script, maxWords));
   }
-  // Last resort: still do not drop findings; allow slightly over budget
   return script;
+}
+
+/** Strip advice (unless opted in) and expand Romans — no keyFinding append. */
+export function finalizePatientAudioScript(
+  script: string,
+  opts: { includeFollowUp?: boolean } = {}
+): string {
+  const includeFollowUp = opts.includeFollowUp === true;
+  let out = cleanWhitespace(script);
+  if (!includeFollowUp) {
+    out = filterSpokenSentences(out, false);
+  }
+  return expandRomanNumeralsForSpeech(out);
 }
 
 /** Titles of findings the spoken script is expected to cover (for QA / AI prompts). */
@@ -359,27 +367,25 @@ function findingMatchesMissingLabel(title: string, missingLabel: string): boolea
 }
 
 /**
- * Ensure a spoken script covers every keyFinding (same scope as the patient PDF).
- * Appends compact local lines for any omitted labels; strips advice unless opted in.
+ * Optional helper: append missing keyFinding cards.
+ * Default audio path does NOT use this — it narrates the first 2 PDF sections only.
  */
 export function reconcileSpokenScriptWithFindings(
   script: string,
   summary: PatientSummaryAudioInput | null | undefined,
-  opts: { includeFollowUp?: boolean } = {}
+  opts: { includeFollowUp?: boolean; appendMissingFindings?: boolean } = {}
 ): { script: string; missingLabels: string[]; appended: number } {
   const includeFollowUp = opts.includeFollowUp === true;
-  let out = cleanWhitespace(script);
-  if (!includeFollowUp) {
-    out = filterSpokenSentences(out, false);
-  }
+  let out = finalizePatientAudioScript(script, { includeFollowUp });
   const labels = listPatientSummaryFindingLabels(summary);
   const missing = labels.filter((label) => !scriptMentionsFindingLabel(out, label));
-  if (!missing.length || !summary || !Array.isArray(summary.keyFindings)) {
-    return {
-      script: expandRomanNumeralsForSpeech(out),
-      missingLabels: missing,
-      appended: 0,
-    };
+  if (
+    opts.appendMissingFindings !== true ||
+    !missing.length ||
+    !summary ||
+    !Array.isArray(summary.keyFindings)
+  ) {
+    return { script: out, missingLabels: missing, appended: 0 };
   }
   const extras: string[] = [];
   for (const f of summary.keyFindings) {
@@ -390,13 +396,9 @@ export function reconcileSpokenScriptWithFindings(
     extras.push(plain ? `Sobre ${title}: ${plain}` : `Sobre ${title}.`);
   }
   if (extras.length) {
-    out = cleanWhitespace(`${out} ${extras.join(" ")}`);
+    out = expandRomanNumeralsForSpeech(cleanWhitespace(`${out} ${extras.join(" ")}`));
   }
-  return {
-    script: expandRomanNumeralsForSpeech(out),
-    missingLabels: missing,
-    appended: extras.length,
-  };
+  return { script: out, missingLabels: missing, appended: extras.length };
 }
 
 export function estimateSpokenSeconds(script: string, wordsPerSecond = 2.4): number {
@@ -477,7 +479,7 @@ export async function fetchPatientSummaryAudioScript(opts: {
   });
   const json = await res.json().catch(() => ({} as any));
   if (!res.ok || !json?.success || !json?.script) {
-    // Local fallback — still covers every keyFinding
+    // Local fallback — first 2 PDF sections
     const local = buildPatientSummarySpokenScript(opts.patientSummary, {
       includeFollowUp: opts.includeFollowUp,
       followUpText: opts.followUpText,
@@ -485,23 +487,18 @@ export async function fetchPatientSummaryAudioScript(opts: {
       patientFirstName: opts.patientFirstName,
       maxWords: 450,
     });
-    const reconciled = reconcileSpokenScriptWithFindings(local, opts.patientSummary, {
-      includeFollowUp: opts.includeFollowUp,
-    });
     return {
-      script: reconciled.script,
+      script: finalizePatientAudioScript(local, {
+        includeFollowUp: opts.includeFollowUp,
+      }),
       provider: "local-fallback",
       findingCount: listPatientSummaryFindingLabels(opts.patientSummary).length,
     };
   }
-  // Defense in depth: re-check coverage / strip advice on the client too
-  const reconciled = reconcileSpokenScriptWithFindings(
-    String(json.script),
-    opts.patientSummary,
-    { includeFollowUp: opts.includeFollowUp }
-  );
   return {
-    script: reconciled.script,
+    script: finalizePatientAudioScript(String(json.script), {
+      includeFollowUp: opts.includeFollowUp,
+    }),
     provider: String(json.provider || "server"),
     findingCount: Number(json.findingCount) || 0,
   };

@@ -164,7 +164,7 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
   const handleWhatsAppText = () => {
     if (!script.trim()) return;
     const intro =
-      "*Audio / explicación breve para el paciente*\n_Todos los hallazgos del PDF — sin plan de tratamiento" +
+      "*Audio / explicación breve para el paciente*\n_Basado en «Qué estudio se le realizó» y «En pocas palabras» — sin plan de tratamiento" +
       (includeFollowUp ? " (incluye seguimiento solicitado)_" : "_") +
       "\n\n";
     const url = buildWhatsAppSendUrl(whatsappPhone || "", intro + script);
@@ -179,15 +179,19 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <div>
           <div className="text-[10px] font-black uppercase tracking-wider text-emerald-300 font-mono flex items-center gap-1.5">
             <Volume2 className="h-3.5 w-3.5" />
-            Audio WhatsApp (todos los hallazgos)
+            Audio WhatsApp (2 primeras secciones)
           </div>
           <p className="text-[10px] text-slate-400 mt-1 leading-relaxed max-w-xl">
-            Mismo alcance que el PDF explicativo:{" "}
-            <span className="text-emerald-200/90">
-              {findingCount > 0
-                ? `${findingCount} hallazgo${findingCount === 1 ? "" : "s"}`
-                : "síntesis del estudio"}
-            </span>
+            Narra{" "}
+            <span className="text-emerald-200/90">Qué estudio se le realizó</span>
+            {" + "}
+            <span className="text-emerald-200/90">En pocas palabras</span>
+            {findingCount > 0 ? (
+              <span className="text-slate-500">
+                {" "}
+                · PDF con {findingCount} ficha{findingCount === 1 ? "" : "s"} de hallazgo
+              </span>
+            ) : null}
             {script ? (
               <span className="text-slate-500"> · ~{seconds}s estimados</span>
             ) : null}
@@ -213,7 +217,7 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         </p>
       ) : isBuildingScript ? (
         <p className="text-[11px] text-slate-500 italic px-1">
-          La IA está armando el resumen hablado de todos los hallazgos…
+          La IA está armando el audio con las dos primeras secciones del PDF…
         </p>
       ) : null}
 
@@ -252,7 +256,7 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
           onClick={handleDownloadMp3}
           disabled={isDownloading || isBuildingScript || !patientSummary}
           className="text-[9px] font-black text-slate-100 border border-slate-600 px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono inline-flex items-center gap-1.5 bg-slate-900 disabled:opacity-50"
-          title="Voz natural OpenAI. Guion con todos los hallazgos del PDF."
+          title="Voz natural OpenAI. Guion = Qué estudio se le realizó + En pocas palabras."
         >
           {isDownloading ? (
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -277,8 +281,8 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p>
       ) : (
         <p className="text-[9px] text-slate-500 leading-snug">
-          El audio resume todos los hallazgos del PDF (no se corta en riñones si también hay
-          ovario, etc.). Sin recomendaciones salvo que marque seguimiento.
+          El audio usa las mismas dos primeras secciones del PDF explicativo (estudio + en
+          pocas palabras). Sin recomendaciones salvo que marque seguimiento.
         </p>
       )}
 

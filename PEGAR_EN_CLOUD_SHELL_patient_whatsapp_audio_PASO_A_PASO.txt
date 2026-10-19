@@ -18,9 +18,10 @@ grep -q 'marin' src/lib/openaiPatientSummary.ts && echo "OK voice marin" || echo
 grep -q 'handleDownloadWhatsappPatientAudio' src/App.tsx && echo "OK whatsapp audio btn" || echo "ERROR"
 grep -q 'downloadPatientSummaryAudioMp3' src/lib/patientSummaryAudio.ts && echo "OK audio download helper" || echo "ERROR"
 grep -q 'patient-summary-audio-script' server.ts && echo "OK audio script api" || echo "ERROR"
-grep -q 'reconcileSpokenScriptWithFindings' src/lib/patientSummaryAudio.ts && echo "OK all-findings reconcile" || echo "ERROR"
+grep -q 'Qué estudio se le realizó' src/lib/openaiPatientSummary.ts && echo "OK audio 2 sections" || echo "ERROR"
+grep -q 'finalizePatientAudioScript' src/lib/patientSummaryAudio.ts && echo "OK finalize" || echo "ERROR"
 grep -q 'sugier' src/lib/patientSummaryAudio.ts && echo "OK sugiere filter" || echo "ERROR"
-grep -q 'todos los hallazgos del PDF' src/App.tsx && echo "OK whatsapp subtitle" || echo "ERROR"
+grep -q 'En pocas palabras' src/App.tsx && echo "OK whatsapp subtitle" || echo "ERROR"
 
 --- BLOQUE 2 (copiar y Enter) ---
 cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"
@@ -29,4 +30,4 @@ gcloud secrets describe openai-api-key >/dev/null 2>&1 && SECRETS="${SECRETS},OP
 gcloud run deploy rad-ai-expert --source . --region us-central1 --update-secrets="$SECRETS" 2>&1 | tee ~/deploy_patient_whatsapp_audio.log
 echo "Deploy termino: $?"
 gcloud run services describe rad-ai-expert --region us-central1 --format='value(status.url)'
-echo "Hard-refresh → Explicar para el paciente → Audio WhatsApp debe cubrir TODOS los hallazgos del PDF (p. ej. ovario aunque haya riñones antes). Seguimiento OFF por defecto."
+echo "Hard-refresh → Explicar para el paciente → Audio WhatsApp narra las 2 primeras secciones del PDF (Qué estudio se le realizó + En pocas palabras). Seguimiento OFF por defecto."

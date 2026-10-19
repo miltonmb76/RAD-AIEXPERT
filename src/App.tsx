@@ -16617,7 +16617,7 @@ Ejemplo:
                         {isDownloadingWhatsappAudio ? "Generando audio…" : "3. Audio explicación (MP3)"}
                       </span>
                       <span className="text-[8.5px] text-slate-400 font-mono leading-none block uppercase">
-                        Voz natural · todos los hallazgos del PDF · sin tratamiento por defecto
+                        Voz natural · Qué estudio + En pocas palabras · sin tratamiento por defecto
                       </span>
                     </div>
                   </button>

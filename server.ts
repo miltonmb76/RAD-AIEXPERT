@@ -29,9 +29,8 @@ import {
 import {
   buildPatientSummarySpokenScript,
   expandRomanNumeralsForSpeech,
+  finalizePatientAudioScript,
   listPatientSummaryFindingLabels,
-  reconcileSpokenScriptWithFindings,
-  scriptMentionsFindingLabel,
 } from "./src/lib/patientSummaryAudio";
 import {
   buildInfographicLateralityPromptBlock,
@@ -3832,8 +3831,9 @@ Devuelve JSON con:
 });
 
 /**
- * Build a spoken patient-audio script that covers ALL PDF findings.
- * Prefers OpenAI; falls back to local builder (still all keyFindings).
+ * Spoken patient-audio script from the first 2 PDF sections:
+ * «Qué estudio se le realizó» + «En pocas palabras».
+ * Prefers OpenAI; falls back to local builder of those same two fields.
  * POST /api/patient-summary-audio-script
  * body: { patientSummary, includeFollowUp?, followUpText?, studyType?, patientFirstName? }
  */
@@ -3850,13 +3850,14 @@ app.post("/api/patient-summary-audio-script", async (req: express.Request, res: 
     const followUpText = String(req.body?.followUpText || "");
     const studyType = String(req.body?.studyType || "");
     const patientFirstName = String(req.body?.patientFirstName || "");
-    const requiredLabels = listPatientSummaryFindingLabels(patientSummary);
+    const hasOverview = Boolean(String(patientSummary.studyOverview || "").trim());
+    const hasSummary = Boolean(String(patientSummary.summary || "").trim());
 
     let script = "";
     let provider: "openai" | "local" = "local";
     let model = "local-builder";
 
-    if (hasOpenAiApiKey()) {
+    if (hasOpenAiApiKey() && (hasOverview || hasSummary)) {
       try {
         const ai = await generatePatientSummaryAudioScriptOpenAI({
           patientSummary,
@@ -3876,20 +3877,6 @@ app.post("/api/patient-summary-audio-script", async (req: express.Request, res: 
       }
     }
 
-    // If AI omitted many findings (e.g. stopped at riñones), prefer full local PDF-scope script
-    if (script && requiredLabels.length >= 2) {
-      const covered = requiredLabels.filter((label) =>
-        scriptMentionsFindingLabel(script, label)
-      ).length;
-      const coverage = covered / requiredLabels.length;
-      if (coverage < 0.7) {
-        console.warn(
-          `Guion audio paciente: cobertura IA ${covered}/${requiredLabels.length}; usando builder local completo.`
-        );
-        script = "";
-      }
-    }
-
     if (!script) {
       script = buildPatientSummarySpokenScript(patientSummary, {
         includeFollowUp,
@@ -3902,19 +3889,15 @@ app.post("/api/patient-summary-audio-script", async (req: express.Request, res: 
       model = "local-builder";
     }
 
-    // Strip advice (unless opted in) and append any still-missing findings
-    const reconciled = reconcileSpokenScriptWithFindings(script, patientSummary, {
-      includeFollowUp,
-    });
-    script = reconciled.script;
+    script = finalizePatientAudioScript(script, { includeFollowUp });
 
     return res.json({
       success: true,
       script,
       provider,
       model,
-      findingCount: requiredLabels.length,
-      missingAppended: reconciled.appended,
+      sourceSections: ["studyOverview", "summary"],
+      findingCount: listPatientSummaryFindingLabels(patientSummary).length,
     });
   } catch (error: any) {
     console.error("Error en /api/patient-summary-audio-script:", error);

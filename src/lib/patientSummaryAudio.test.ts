@@ -11,6 +11,7 @@ import {
 describe("patientSummaryAudio", () => {
   it("flags follow-up / treatment sentences", () => {
     expect(isFollowUpLikeSentence("Se recomienda control en 6 meses.")).toBe(true);
+    expect(isFollowUpLikeSentence("Se recomienda control.")).toBe(true);
     expect(isFollowUpLikeSentence("Se sugiere control.")).toBe(true);
     expect(isFollowUpLikeSentence("Hay un nódulo sólido de 8 mm en mama derecha.")).toBe(
       false
@@ -48,8 +49,11 @@ describe("patientSummaryAudio", () => {
       { includeFollowUp: false }
     );
     expect(script.toLowerCase()).toContain("ecografía");
+    expect(script.toLowerCase()).toContain("nódulo");
     expect(script.toLowerCase()).not.toMatch(/recomiend|control en 6/);
     expect(script.toLowerCase()).toContain("médico tratante");
+    // Uses overview + summary, not the finding cards
+    expect(script.toLowerCase()).not.toContain("sobre nódulo mamario");
 
     const withFollow = buildPatientSummarySpokenScript(
       {
@@ -66,36 +70,52 @@ describe("patientSummaryAudio", () => {
     expect(withFollow.toLowerCase()).toContain("bi-rads");
   });
 
-  it("covers every keyFinding (does not stop at early organs)", () => {
+  it("narrates the first 2 PDF sections (studyOverview + summary)", () => {
     const script = buildPatientSummarySpokenScript(
       {
-        studyOverview: "Ecografía de abdomen y pelvis.",
-        summary: "Se evaluaron hígado, riñones y anexos. Se recomienda control en 6 meses.",
+        studyOverview:
+          "Se le realizó una ecografía de abdomen y pelvis para evaluar órganos abdominales y anexos.",
+        summary:
+          "El hígado y los riñones se ven sin alteraciones relevantes. En el ovario izquierdo hay una lesión quística de 3 cm. Se recomienda control en 6 meses.",
         keyFindings: [
           {
             title: "Hígado",
-            simplifiedExplanation: "Parénquima homogéneo.",
-          },
-          {
-            title: "Riñón derecho",
-            simplifiedExplanation: "Sin hidronefrosis.",
+            simplifiedExplanation: "Parénquima homogéneo — detalle de ficha que el audio no debe priorizar.",
           },
           {
             title: "Ovario izquierdo",
-            simplifiedExplanation: "Lesión quística de 3 cm. Se sugiere control.",
+            simplifiedExplanation: "Detalle de ficha omitible si ya está en En pocas palabras.",
           },
         ],
       },
-      { includeFollowUp: false, maxWords: 200 }
+      { includeFollowUp: false, maxWords: 300 }
     );
+    expect(script.toLowerCase()).toContain("abdomen");
     expect(script.toLowerCase()).toContain("hígado");
-    expect(script.toLowerCase()).toContain("riñón");
+    expect(script.toLowerCase()).toContain("riñones");
     expect(script.toLowerCase()).toContain("ovario");
     expect(script.toLowerCase()).toContain("quística");
-    expect(script.toLowerCase()).not.toMatch(/recomend|sugiere|control en 6/);
+    expect(script.toLowerCase()).not.toMatch(/recomend|control en 6/);
+    expect(script.toLowerCase()).not.toContain("detalle de ficha");
+    expect(script.toLowerCase()).toContain("dos primeras secciones");
   });
 
-  it("reconciles AI scripts that omit later findings (e.g. ovary after kidneys)", () => {
+  it("falls back to keyFindings only when En pocas palabras is empty", () => {
+    const script = buildPatientSummarySpokenScript(
+      {
+        studyOverview: "Ecografía de abdomen y pelvis.",
+        summary: "",
+        keyFindings: [
+          { title: "Ovario izquierdo", simplifiedExplanation: "Lesión quística de 3 cm." },
+        ],
+      },
+      { includeFollowUp: false }
+    );
+    expect(script.toLowerCase()).toContain("ovario");
+    expect(script.toLowerCase()).toContain("quística");
+  });
+
+  it("can optionally append missing finding cards", () => {
     const summary = {
       studyOverview: "Ecografía de abdomen y pelvis.",
       summary: "Hallazgos abdominales.",
@@ -109,10 +129,10 @@ describe("patientSummaryAudio", () => {
     expect(scriptMentionsFindingLabel(incomplete, "Ovario izquierdo")).toBe(false);
     const { script, appended } = reconcileSpokenScriptWithFindings(incomplete, summary, {
       includeFollowUp: false,
+      appendMissingFindings: true,
     });
     expect(appended).toBeGreaterThan(0);
     expect(script.toLowerCase()).toContain("ovario");
-    expect(script.toLowerCase()).toContain("quística");
   });
 
   it("expands Roman numerals so TTS does not say letter i", () => {
@@ -130,13 +150,8 @@ describe("patientSummaryAudio", () => {
     const script = buildPatientSummarySpokenScript(
       {
         studyOverview: "Ecografía hepática.",
-        summary: "Cambios compatibles con fibrosis Grado I.",
-        keyFindings: [
-          {
-            title: "Hígado",
-            simplifiedExplanation: "Patrón de fibrosis grado II.",
-          },
-        ],
+        summary: "Cambios compatibles con fibrosis Grado I y patrón de fibrosis grado II.",
+        keyFindings: [],
       },
       { includeFollowUp: false, maxWords: 140 }
     );
