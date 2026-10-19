@@ -4,6 +4,7 @@ import {
   flushActiveSessionDraftNow,
   loadActiveSessionDraft,
 } from "../lib/activeSessionDraft";
+import { isDynamicImportFetchError } from "../lib/lazyRetry";
 
 type Props = {
   children: React.ReactNode;
@@ -52,6 +53,16 @@ export class AppErrorBoundary extends React.Component<Props, State> {
   private handleSoftRecover = () => {
     // Flush any last in-memory draft registered by App before remount wipes React state.
     flushActiveSessionDraftNow();
+    // Stale Vite chunks cannot be recovered by remounting React.lazy (failed promise is cached).
+    if (isDynamicImportFetchError(this.state.error)) {
+      try {
+        sessionStorage.setItem("rad_ui_crash_reload", "1");
+      } catch {
+        /* ignore */
+      }
+      window.location.reload();
+      return;
+    }
     this.setState((s) => ({
       error: null,
       componentStack: "",
@@ -73,6 +84,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
     if (this.state.error) {
       const isModule = Boolean(this.props.label);
       const msg = String(this.state.error.message || this.state.error);
+      const isChunkMiss = isDynamicImportFetchError(this.state.error);
       return (
         <div
           role="alert"
@@ -114,11 +126,13 @@ export class AppErrorBoundary extends React.Component<Props, State> {
               lineHeight: 1.45,
             }}
           >
-            {isModule
-              ? "Este módulo falló. Puedes reintentarlo sin cerrar el resto de la sesión."
-              : "Pantalla azul / vacía por un error de React. No hace falta reiniciar el servidor: recupera aquí."}
+            {isChunkMiss
+              ? "La app se actualizó y este módulo quedó con un archivo viejo en caché. Recarga la página (el informe se recupera del borrador)."
+              : isModule
+                ? "Este módulo falló. Puedes reintentarlo sin cerrar el resto de la sesión."
+                : "Pantalla azul / vacía por un error de React. No hace falta reiniciar el servidor: recupera aquí."}
           </div>
-          {!isModule && draftHasReport(loadActiveSessionDraft()) && (
+          {(isChunkMiss || !isModule) && draftHasReport(loadActiveSessionDraft()) && (
             <div
               style={{
                 fontSize: 12,
@@ -144,7 +158,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
             <button
               type="button"
-              onClick={this.handleSoftRecover}
+              onClick={isChunkMiss ? this.handleHardReload : this.handleSoftRecover}
               style={{
                 padding: "10px 16px",
                 borderRadius: 10,
@@ -156,9 +170,11 @@ export class AppErrorBoundary extends React.Component<Props, State> {
                 cursor: "pointer",
               }}
             >
-              Reintentar y recuperar informe
+              {isChunkMiss
+                ? "Recargar y recuperar informe"
+                : "Reintentar y recuperar informe"}
             </button>
-            {!isModule && (
+            {(isChunkMiss || !isModule) && (
               <button
                 type="button"
                 onClick={this.handleHardReload}
