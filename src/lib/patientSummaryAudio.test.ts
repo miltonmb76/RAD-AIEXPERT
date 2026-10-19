@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPatientAudioFilename,
   buildPatientSummarySpokenScript,
   expandRomanNumeralsForSpeech,
   filterSpokenSentences,
@@ -9,6 +10,13 @@ import {
 } from "./patientSummaryAudio";
 
 describe("patientSummaryAudio", () => {
+  it("names the MP3 with patient name + audio", () => {
+    expect(buildPatientAudioFilename("María López")).toBe("Maria_Lopez_audio.mp3");
+    expect(buildPatientAudioFilename("  Juan  ")).toBe("Juan_audio.mp3");
+    expect(buildPatientAudioFilename("")).toBe("paciente_audio.mp3");
+    expect(buildPatientAudioFilename(null)).toBe("paciente_audio.mp3");
+  });
+
   it("flags follow-up / treatment sentences", () => {
     expect(isFollowUpLikeSentence("Se recomienda control en 6 meses.")).toBe(true);
     expect(isFollowUpLikeSentence("Se recomienda control.")).toBe(true);

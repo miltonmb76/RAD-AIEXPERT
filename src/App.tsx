@@ -6105,7 +6105,7 @@ Ejemplo:
       await downloadPatientSummaryAudioMp3({
         script,
         includeFollowUp: whatsappAudioIncludeFollowUp,
-        filename: "explicacion-paciente-whatsapp.mp3",
+        patientName,
       });
     } catch (e: any) {
       setWhatsappAudioError(

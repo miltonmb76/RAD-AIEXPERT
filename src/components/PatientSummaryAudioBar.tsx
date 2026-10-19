@@ -147,7 +147,7 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
       const blob = await downloadPatientSummaryAudioMp3({
         script: fresh,
         includeFollowUp,
-        filename: "explicacion-paciente-whatsapp.mp3",
+        patientName,
       });
       if (mp3Url) URL.revokeObjectURL(mp3Url);
       setMp3Url(URL.createObjectURL(blob));

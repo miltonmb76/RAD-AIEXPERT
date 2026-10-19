@@ -505,23 +505,43 @@ export async function fetchPatientSummaryAudioScript(opts: {
 }
 
 /**
+ * Download filename: `{NombrePaciente}_audio.mp3` (filesystem-safe).
+ * Falls back to `paciente_audio.mp3` when no name is available.
+ */
+export function buildPatientAudioFilename(patientName?: string | null): string {
+  const raw = String(patientName || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_")
+    .slice(0, 80);
+  const stem = raw || "paciente";
+  return `${stem}_audio.mp3`;
+}
+
+/**
  * Request natural-voice MP3 from /api/patient-summary-tts and trigger a download.
  * Shared by the patient module bar and the WhatsApp share modal.
  */
 export async function downloadPatientSummaryAudioMp3(opts: {
   script: string;
   filename?: string;
+  patientName?: string | null;
   includeFollowUp?: boolean;
 }): Promise<Blob> {
   const script = String(opts.script || "").replace(/\s+/g, " ").trim();
   if (!script) {
     throw new Error("No hay guion de audio. Genere primero la explicación al paciente.");
   }
+  const filename =
+    String(opts.filename || "").trim() || buildPatientAudioFilename(opts.patientName);
   const res = await fetch("/api/patient-summary-tts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       text: script,
+      filename,
       includeFollowUp: opts.includeFollowUp === true,
     }),
   });
@@ -539,7 +559,7 @@ export async function downloadPatientSummaryAudioMp3(opts: {
   try {
     const a = document.createElement("a");
     a.href = url;
-    a.download = opts.filename || "explicacion-paciente-whatsapp.mp3";
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();

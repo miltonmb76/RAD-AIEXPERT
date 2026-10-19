@@ -3927,8 +3927,19 @@ app.post("/api/patient-summary-tts", async (req: express.Request, res: express.R
       });
     }
     const { buffer, model, voice } = await synthesizePatientSummarySpeech({ text });
+    const rawName = String(req.body?.filename || "").trim();
+    const safeName = rawName
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 120);
+    const downloadName =
+      safeName && /\.mp3$/i.test(safeName)
+        ? safeName
+        : safeName
+          ? `${safeName}.mp3`
+          : "paciente_audio.mp3";
     res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Content-Disposition", 'attachment; filename="explicacion-paciente-whatsapp.mp3"');
+    res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
     res.setHeader("X-TTS-Model", model);
     res.setHeader("X-TTS-Voice", voice);
     return res.send(buffer);
