@@ -265,17 +265,23 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
 
       {chainData && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-violet-500/30 bg-violet-950/20 p-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-violet-300/80 font-mono">
+          <div className="rounded-2xl border border-violet-500/30 bg-violet-950/20 p-4 overflow-hidden min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-violet-300/80 font-mono break-words">
               {chainData.title}
               {chainData.studyRegion ? ` · ${chainData.studyRegion}` : ""}
             </p>
-            <p className="text-sm font-bold text-slate-100 mt-1">{chainData.workingDiagnosis || "Diagnóstico en elaboración"}</p>
+            <p className="text-sm font-bold text-slate-100 mt-1 break-words whitespace-normal leading-snug">
+              {chainData.workingDiagnosis || "Diagnóstico en elaboración"}
+            </p>
             {chainData.certaintyLabel && (
-              <p className="text-[11px] text-violet-200/80 mt-1">Certeza: {chainData.certaintyLabel}</p>
+              <p className="text-[11px] text-violet-200/80 mt-1 break-words">
+                Certeza: {chainData.certaintyLabel}
+              </p>
             )}
             {chainData.clinicalContext && (
-              <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">{chainData.clinicalContext}</p>
+              <p className="text-[11px] text-slate-400 mt-2 leading-relaxed break-words">
+                {chainData.clinicalContext}
+              </p>
             )}
           </div>
 

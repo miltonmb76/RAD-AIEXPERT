@@ -70,15 +70,41 @@ export function renderReasoningChainAnnexToPDF(
     afterGap: 6 * factor,
   });
 
-  const bannerTitle = sanitizePdfText(
-    `${chain.workingDiagnosis || chain.title}${chain.certaintyLabel ? `  |  Certeza: ${chain.certaintyLabel}` : ""}`
-  );
-  const bannerLines = doc.splitTextToSize(bannerTitle, contentWidth - 14 * factor);
-  const contextLines = chain.clinicalContext
-    ? doc.splitTextToSize(sanitizePdfText(chain.clinicalContext), contentWidth - 14 * factor)
+  // Accent bar + side padding — keep diagnosis wrapping inside the rounded box.
+  const bannerPadX = 7 * factor;
+  const bannerTextW = Math.max(40 * factor, contentWidth - bannerPadX * 2);
+  const bannerLineH = 5 * factor;
+  const contextLineH = 4.2 * factor;
+
+  // jsPDF splitTextToSize uses the CURRENT font metrics — set before measuring.
+  const diagnosisText = sanitizePdfText(String(chain.workingDiagnosis || chain.title || ""));
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(fsBanner);
+  const diagnosisLines = diagnosisText
+    ? doc.splitTextToSize(diagnosisText, bannerTextW)
     : [];
-  const bannerH =
-    Math.max(18 * factor, bannerLines.length * 5 * factor + contextLines.length * 4 * factor + 12 * factor);
+  const certaintyText = chain.certaintyLabel
+    ? sanitizePdfText(`Certeza: ${chain.certaintyLabel}`)
+    : "";
+  const certaintyLines = certaintyText
+    ? doc.splitTextToSize(certaintyText, bannerTextW)
+    : [];
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(fsMeta);
+  const contextLines = chain.clinicalContext
+    ? doc.splitTextToSize(sanitizePdfText(chain.clinicalContext), bannerTextW)
+    : [];
+
+  const bannerTopPad = 6 * factor;
+  const bannerBottomPad = 5 * factor;
+  const bannerH = Math.max(
+    18 * factor,
+    bannerTopPad +
+      diagnosisLines.length * bannerLineH +
+      certaintyLines.length * bannerLineH +
+      contextLines.length * contextLineH +
+      bannerBottomPad
+  );
 
   doc.setFillColor(245, 243, 255);
   doc.setDrawColor(196, 181, 253);
@@ -86,21 +112,25 @@ export function renderReasoningChainAnnexToPDF(
   doc.setFillColor(139, 92, 246);
   doc.rect(marginX, y, 3.5 * factor, bannerH, "F");
 
+  let ty = y + bannerTopPad;
   doc.setTextColor(76, 29, 149);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsBanner);
-  let ty = y + 6 * factor;
-  bannerLines.forEach((line: string) => {
-    doc.text(line, marginX + 7 * factor, ty);
-    ty += 5 * factor;
+  diagnosisLines.forEach((line: string) => {
+    doc.text(line, marginX + bannerPadX, ty);
+    ty += bannerLineH;
+  });
+  certaintyLines.forEach((line: string) => {
+    doc.text(line, marginX + bannerPadX, ty);
+    ty += bannerLineH;
   });
   if (contextLines.length) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(fsMeta);
     doc.setTextColor(71, 85, 105);
     contextLines.forEach((line: string) => {
-      doc.text(line, marginX + 7 * factor, ty);
-      ty += 4 * factor;
+      doc.text(line, marginX + bannerPadX, ty);
+      ty += contextLineH;
     });
   }
   y += bannerH + 6 * factor;
@@ -113,14 +143,19 @@ export function renderReasoningChainAnnexToPDF(
     const fill = nodeFill(node.kind);
     const title = sanitizePdfText(`${idx + 1}. ${node.title || reasoningKindLabel(node.kind)}`);
     const summary = sanitizePdfText(node.summary || "");
-    const titleLines = doc.splitTextToSize(title, cardW - 12 * factor);
-    const summaryLines = summary ? doc.splitTextToSize(summary, cardW - 12 * factor) : [];
+    const cardTextW = Math.max(36 * factor, cardW - 12 * factor);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(fsBody);
+    const titleLines = doc.splitTextToSize(title, cardTextW);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(fsMeta);
+    const summaryLines = summary ? doc.splitTextToSize(summary, cardTextW) : [];
     const itemBlocks: { lines: string[]; h: number }[] = [];
     (node.items || []).forEach((it) => {
       const head = sanitizePdfText(
         `${it.label} [${reasoningStatusLabel(it.status)}]${it.significance ? ` — ${it.significance}` : ""}`
       );
-      const lines = doc.splitTextToSize(`• ${head}`, cardW - 14 * factor);
+      const lines = doc.splitTextToSize(`• ${head}`, Math.max(32 * factor, cardW - 14 * factor));
       itemBlocks.push({ lines, h: lines.length * lineBody });
     });
     const itemsH = itemBlocks.reduce((acc, b) => acc + b.h + 1.2 * factor, 0);
@@ -128,7 +163,7 @@ export function renderReasoningChainAnnexToPDF(
     if (node.clinicalLink) metaBits.push(`Clinica: ${node.clinicalLink}`);
     if (node.labLink) metaBits.push(`Lab: ${node.labLink}`);
     const metaLines = metaBits.length
-      ? doc.splitTextToSize(sanitizePdfText(metaBits.join("  |  ")), cardW - 12 * factor)
+      ? doc.splitTextToSize(sanitizePdfText(metaBits.join("  |  ")), cardTextW)
       : [];
     const cardH =
       8 * factor +
