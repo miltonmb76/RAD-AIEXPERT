@@ -1801,9 +1801,20 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       diagnosisAnchor: String(diagnosisAnchor || topic || "").trim(),
       correctionNotes: String(correctionNotes || ""),
     });
+    // Study/topic/report context so extremity landmark checklists fire even when
+    // the study-laterality field only says "Izquierdo" without naming the organ.
+    const lateralityContextText = [
+      String(studyType || ""),
+      String(topicText || topic || ""),
+      String(diagnosisAnchor || "").trim(),
+      reportForInfographic,
+    ]
+      .filter(Boolean)
+      .join("\n");
     const lateralityBlock = buildInfographicLateralityPromptBlock(
       orientation,
-      lateralityExtract
+      lateralityExtract,
+      lateralityContextText
     );
     const breastClockBlock = buildInfographicBreastClockBrief({
       report: reportForInfographic,
@@ -1918,7 +1929,12 @@ ${buildLockedCopyPromptBlock(copyPlan)}
     const lateralityLead = `
 ANTES DE DIBUJAR (si fallas esto la imagen NO sirve):
 - SIN ECO REAL: no dibujes fotogramas de ultrasonido (B-mode, Doppler, elastografía sobre eco, "Imagen 1/2"). Solo anatomía CGI + texto + gráficos de datos.
-ORIENTACIÓN: ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
+ORIENTACIÓN: ${
+      orientation === "PA"
+        ? "PA — paciente DE ESPALDAS (derecha del paciente = derecha de la pantalla)."
+        : "AP — paciente DE FRENTE (derecha del paciente = IZQUIERDA de la pantalla; izquierda del paciente = DERECHA de la pantalla)."
+    }
+- Título y silueta anatómica DEBEN coincidir (no dibujar hombro derecho con título «izquierdo»).
 ${lateralityBlock}
 ${breastClockBlock ? `\n${breastClockBlock}\n` : ""}
 `;
