@@ -256,7 +256,7 @@ import {
   saveActiveSessionAnnexBundle,
   saveActiveSessionDraft,
 } from "./lib/activeSessionDraft";
-import { runSafeAsync } from "./lib/safeAsync";
+import { isPdfGenerationBusy, runSafeAsync } from "./lib/safeAsync";
 
 export default function App() {
   // Soft-recover remounts App; hydrate critical fields from sessionStorage draft.
@@ -5416,10 +5416,20 @@ Ejemplo:
 
   const guardReportPdfExport = (action: () => void | Promise<void>) => {
     const run = () =>
-      runSafeAsync(action, (err) => {
+      runSafeAsync(async () => {
+        // Avoid silent no-ops when another heavy PDF (preview/Gmail) still holds the lock
+        if (isPdfGenerationBusy()) {
+          try {
+            setGmailErrorMessage(
+              "Generando otro PDF... espere unos segundos y vuelva a pulsar Descargar."
+            );
+          } catch (_) {}
+        }
+        await action();
+      }, (err) => {
         const msg = err instanceof Error ? err.message : String(err);
         try {
-          setGmailErrorMessage("Error al exportar/enviar: " + msg);
+          setGmailErrorMessage("Error al exportar/enviar PDF: " + msg);
         } catch (_) {}
         console.error("Export/send action failed:", err);
       });

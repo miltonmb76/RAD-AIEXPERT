@@ -1,3 +1,5 @@
+import { triggerBrowserDownload } from "./triggerBrowserDownload";
+
 /** Trigger a browser download from a base64 PDF payload */
 export function downloadPdfFromBase64(base64: string, filename: string) {
   try {
@@ -8,17 +10,12 @@ export function downloadPdfFromBase64(base64: string, filename: string) {
     }
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const result = triggerBrowserDownload(blob, filename || "reporte.pdf");
+    if (!result.ok) {
+      throw new Error(result.error || "No se pudo iniciar la descarga del PDF.");
+    }
   } catch (err) {
     console.error("Error downloading PDF from base64:", err);
-    alert("Error al descargar el PDF guardado.");
+    alert("Error al descargar el PDF guardado. Intente de nuevo.");
   }
-};
-
+}
