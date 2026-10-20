@@ -124,13 +124,20 @@ export function triggerBrowserDownload(
   }
 }
 
-/** Async variant that also tries the File System Access save picker once. */
+/**
+ * Async download. By default uses the classic `<a download>` path so Chrome
+ * lists the file in the download shelf / recent downloads bubble.
+ *
+ * `preferSavePicker: true` writes via File System Access instead — that path
+ * does NOT appear in Chrome's download history (by design of the API).
+ */
 export async function triggerBrowserDownloadAsync(
   blob: Blob,
-  filename: string
+  filename: string,
+  opts?: { preferSavePicker?: boolean }
 ): Promise<TriggerDownloadResult> {
   const safeName = sanitizeFilename(filename);
-  if (await trySaveFilePicker(blob, safeName)) {
+  if (opts?.preferSavePicker && (await trySaveFilePicker(blob, safeName))) {
     return { ok: true, method: "savePicker" };
   }
   return triggerBrowserDownload(blob, safeName);
@@ -142,7 +149,9 @@ export async function downloadJsPdfDocument(
   filename: string
 ): Promise<TriggerDownloadResult> {
   const blob = doc.output("blob");
-  const result = await triggerBrowserDownloadAsync(blob, filename);
+  // Always use anchor download for PDFs so they show in Chrome's download shelf
+  // (WhatsApp modal / Descargar PDF). Save-picker bypasses that UI.
+  const result = triggerBrowserDownload(blob, filename);
   if (!result.ok) {
     // Last resort: jsPDF built-in save
     try {

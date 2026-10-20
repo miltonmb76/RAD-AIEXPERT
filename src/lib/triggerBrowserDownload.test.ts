@@ -1,5 +1,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { triggerBrowserDownload } from "./triggerBrowserDownload";
+import {
+  downloadJsPdfDocument,
+  triggerBrowserDownload,
+  triggerBrowserDownloadAsync,
+} from "./triggerBrowserDownload";
 
 describe("triggerBrowserDownload", () => {
   beforeEach(() => {
@@ -32,6 +36,9 @@ describe("triggerBrowserDownload", () => {
         return 1 as any;
       },
       open: vi.fn(),
+      showSaveFilePicker: vi.fn(async () => {
+        throw new Error("save picker should not run for default PDF downloads");
+      }),
     };
   });
 
@@ -51,5 +58,22 @@ describe("triggerBrowserDownload", () => {
   it("rejects empty blobs", () => {
     const result = triggerBrowserDownload(new Blob([]), "x.pdf");
     expect(result.ok).toBe(false);
+  });
+
+  it("downloadJsPdfDocument uses anchor (shows in Chrome download shelf), not save picker", async () => {
+    const doc = {
+      output: () => new Blob(["%PDF-1.4"], { type: "application/pdf" }),
+    };
+    const result = await downloadJsPdfDocument(doc, "Paciente_reporte.pdf");
+    expect(result.ok).toBe(true);
+    expect(result.method).toBe("anchor");
+    expect((window as any).showSaveFilePicker).not.toHaveBeenCalled();
+  });
+
+  it("triggerBrowserDownloadAsync skips save picker unless preferSavePicker", async () => {
+    const blob = new Blob(["%PDF-1.4"], { type: "application/pdf" });
+    const defaultResult = await triggerBrowserDownloadAsync(blob, "a.pdf");
+    expect(defaultResult.method).toBe("anchor");
+    expect((window as any).showSaveFilePicker).not.toHaveBeenCalled();
   });
 });
