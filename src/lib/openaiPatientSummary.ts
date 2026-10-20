@@ -4,6 +4,10 @@
  */
 
 import OpenAI from "openai";
+import {
+  listMustKeepPathologySentences,
+  listPathologyAnchorsFromText,
+} from "./patientSummaryAudio";
 
 export function cleanOpenAiKey(key: string): string {
   if (!key) return "";
@@ -179,9 +183,15 @@ export async function generatePatientSummaryAudioScriptOpenAI(args: {
     throw new Error("Faltan las secciones studyOverview / summary para el guion de audio.");
   }
 
+  const pathologyAnchors = listPathologyAnchorsFromText(summary);
+  const mustSentences = listMustKeepPathologySentences(
+    { studyOverview, summary },
+    includeFollowUp
+  );
+
   const system = includeFollowUp
-    ? "Eres redactor de guiones hablados para pacientes de radiología. Narra con fidelidad las dos primeras secciones de la explicación escrita. Puedes mencionar seguimiento solo si se te da texto de seguimiento."
-    : "Eres redactor de guiones hablados para pacientes de radiología. Narra con fidelidad las dos primeras secciones de la explicación escrita. PROHIBIDO recomendaciones, tratamiento, controles, biopsias o 'qué hacer'.";
+    ? "Eres redactor de guiones hablados para pacientes de radiología. PRIORIDAD: no omitir ningún hallazgo patológico de «En pocas palabras». Puedes mencionar seguimiento solo si se te da texto de seguimiento."
+    : "Eres redactor de guiones hablados para pacientes de radiología. PRIORIDAD: no omitir ningún hallazgo patológico de «En pocas palabras» (riñones, nefropatía, hígado, lesiones, etc.). PROHIBIDO recomendaciones, tratamiento, controles, biopsias o 'qué hacer'.";
 
   const user = `Redacta un GUION HABLADO en español (para audio WhatsApp) usando SOLO estas dos secciones del PDF de explicación al paciente.
 
@@ -196,18 +206,25 @@ ${studyOverview || "(vacía)"}
 SECCIÓN 2 — En pocas palabras:
 ${summary || "(vacía)"}
 
+Hallazgos patológicos que DEBEN aparecer en el audio (si la lista no está vacía): ${
+    pathologyAnchors.length ? pathologyAnchors.join(" · ") : "(derivar de la sección 2)"
+  }
+Frases patológicas a conservar (sentido clínico, no hace falta citar literal):
+${mustSentences.length ? mustSentences.map((s, i) => `${i + 1}. ${s}`).join("\n") : "(ninguna marcada)"}
+
 REGLAS OBLIGATORIAS:
-1. Fuente de verdad: únicamente las dos secciones anteriores. No inventes hallazgos ni uses otras partes del informe.
-2. Conserva el contenido clínico de ambas secciones (órganos y hallazgos que ya mencionan). Puedes alisar el texto para que suene hablado, sin acortar de forma que se pierda información.
-3. Estructura: saludo breve → narrar sección 1 → narrar sección 2 → cierre breve.
-4. Frases claras, tono profesional y cálido. Sin markdown, sin viñetas, sin comillas decorativas.
-5. ${
+1. Fuente de verdad: únicamente las dos secciones anteriores. No inventes hallazgos.
+2. PRIORIDAD MÁXIMA: todo hallazgo patológico de la sección 2 debe mencionarse. Si habla de nefropatía, riñones, hígado, ovario, nódulos, etc., NO los omitas aunque el texto sea largo.
+3. Puedes alisar el texto para que suene hablado, pero sin eliminar órganos ni patologías.
+4. Estructura: saludo breve → narrar sección 1 → narrar sección 2 completa en sentido clínico → cierre breve.
+5. Frases claras, tono profesional y cálido. Sin markdown, sin viñetas, sin comillas decorativas.
+6. ${
     includeFollowUp
       ? "Puedes añadir al final el seguimiento indicado."
       : "NO menciones recomendaciones, tratamiento ni plan de seguimiento."
   }
-6. Longitud natural (aprox. 45 a 150 segundos). No cortes a mitad de una idea de las secciones.
-7. Responde SOLO con el texto del guion.`;
+7. Longitud: la necesaria para cubrir los hallazgos patológicos (aprox. 45 a 180 segundos). Mejor un poco más largo que omitir un riñón o una nefropatía.
+8. Responde SOLO con el texto del guion.`;
 
   const completion = await openai.chat.completions.create({
     model,

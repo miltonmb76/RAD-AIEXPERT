@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildPatientAudioFilename,
   buildPatientSummarySpokenScript,
+  ensureSpokenScriptKeepsPathology,
   expandRomanNumeralsForSpeech,
   filterSpokenSentences,
   isFollowUpLikeSentence,
+  isPathologyHeavySentence,
+  listPathologyAnchorsFromText,
   reconcileSpokenScriptWithFindings,
   scriptMentionsFindingLabel,
 } from "./patientSummaryAudio";
@@ -76,6 +79,31 @@ describe("patientSummaryAudio", () => {
     );
     expect(withFollow.toLowerCase()).toContain("seguimiento");
     expect(withFollow.toLowerCase()).toContain("bi-rads");
+  });
+
+  it("keeps nefropatía / riñones when AI omits them from En pocas palabras", () => {
+    const summary = {
+      studyOverview: "Se realizó ecografía de abdomen.",
+      summary:
+        "El hígado muestra esteatosis leve. Hay signos de nefropatía crónica en ambos riñones, con disminución del tamaño y aumento de la ecogenicidad. Se recomienda control nefrológico.",
+      keyFindings: [],
+    };
+    const incompleteAi =
+      "Hola. Se realizó ecografía de abdomen. El hígado muestra esteatosis leve. El informe queda con su médico tratante.";
+    expect(listPathologyAnchorsFromText(summary.summary)).toEqual(
+      expect.arrayContaining(["nefropatia", "rinones"])
+    );
+    expect(isPathologyHeavySentence("Hay signos de nefropatía crónica en ambos riñones.")).toBe(
+      true
+    );
+    const { script, usedLocalFallback, appendedSentences } = ensureSpokenScriptKeepsPathology(
+      incompleteAi,
+      summary,
+      { includeFollowUp: false }
+    );
+    expect(usedLocalFallback || appendedSentences > 0).toBe(true);
+    expect(script.toLowerCase()).toMatch(/nefropat|ri[nñ]on/);
+    expect(script.toLowerCase()).not.toMatch(/recomend|control nefrol/);
   });
 
   it("narrates the first 2 PDF sections (studyOverview + summary)", () => {
