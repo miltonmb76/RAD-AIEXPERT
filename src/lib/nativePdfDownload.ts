@@ -5262,6 +5262,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
 
       // Output either as file download or Blob URL opened in a new clean screen
       if (returnRawBlob) { return doc.output("blob"); }
+      const { downloadJsPdfDocument, triggerBrowserDownload } = await import("./triggerBrowserDownload");
       if (shareViaWebShare) {
         const blob = doc.output("blob");
         const filename = patientName ? `${patientName.trim().replace(/\s+/gi, "_")}_reporte.pdf` : "reporte_radiologico.pdf";
@@ -5273,20 +5274,42 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
             text: `Le comparto el Reporte de Estudio Doppler de ${patientName || "Paciente"}`
           });
         } else {
-          // Automatic physical browser download as backup
-          doc.save(filename);
+          const dl = await downloadJsPdfDocument(doc, filename);
+          if (!dl.ok) throw new Error(dl.error || "No se pudo descargar el PDF.");
         }
       } else if (openInNewTab) {
         const blob = doc.output("blob");
         const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, "_blank");
+        const opened = window.open(blobUrl, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => {
+          try {
+            URL.revokeObjectURL(blobUrl);
+          } catch {
+            /* ignore */
+          }
+        }, 60_000);
+        // Popup blocked after async PDF build → fall back to download
+        if (!opened) {
+          const filename = patientName
+            ? `${patientName.trim().replace(/\s+/gi, "_")}_reporte.pdf`
+            : "reporte_radiologico.pdf";
+          const dl = triggerBrowserDownload(blob, filename);
+          if (!dl.ok) throw new Error(dl.error || "El navegador bloqueó la pestaña y la descarga.");
+        }
       } else {
-        const filename = patientName ? `${patientName.trim()}.pdf` : "reporte_radiologico.pdf";
-        doc.save(filename);
+        const filename = patientName
+          ? `${patientName.trim().replace(/\s+/gi, "_")}_reporte.pdf`
+          : "reporte_radiologico.pdf";
+        const dl = await downloadJsPdfDocument(doc, filename);
+        if (!dl.ok) throw new Error(dl.error || "No se pudo descargar el PDF.");
       }
     } catch (err) {
       console.error("Error generating native PDF through jsPDF:", err);
-      alert("Ocurrió un error al generar el PDF: " + String(err));
+      alert(
+        "No se pudo completar la descarga del PDF. Espere un momento e intente de nuevo.\n\n" +
+          String(err instanceof Error ? err.message : err)
+      );
+      throw err;
     }
   
   };

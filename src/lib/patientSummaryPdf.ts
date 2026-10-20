@@ -1012,6 +1012,7 @@ export async function downloadPatientSummaryPdf(
     }
 
     if (returnRawBlob) { return doc.output("blob"); }
+    const { downloadJsPdfDocument, triggerBrowserDownload } = await import("./triggerBrowserDownload");
     if (shareViaWebShare) {
       const blob = doc.output("blob");
       const filename = patientName ? `${patientName.trim().replace(/\s+/gi, "_")}_explicacion.pdf` : "explicacion_paciente.pdf";
@@ -1023,18 +1024,40 @@ export async function downloadPatientSummaryPdf(
           text: `Explicación amigable del estudio para ${patientName || "Paciente"}`
         });
       } else {
-        doc.save(filename);
+        const dl = await downloadJsPdfDocument(doc, filename);
+        if (!dl.ok) throw new Error(dl.error || "No se pudo descargar el PDF explicativo.");
       }
     } else if (openInNewTab) {
       const blob = doc.output("blob");
       const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, "_blank");
+      const opened = window.open(blobUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => {
+        try {
+          URL.revokeObjectURL(blobUrl);
+        } catch {
+          /* ignore */
+        }
+      }, 60_000);
+      if (!opened) {
+        const filename = patientName
+          ? `Explicacion_${patientName.trim().replace(/\s+/gi, "_")}.pdf`
+          : "explicacion_paciente.pdf";
+        const dl = triggerBrowserDownload(blob, filename);
+        if (!dl.ok) throw new Error(dl.error || "El navegador bloqueó la pestaña y la descarga.");
+      }
     } else {
-      const filename = patientName ? `Explicacion_${patientName.trim().replace(/\s+/gi, "_")}.pdf` : "explicacion_paciente.pdf";
-      doc.save(filename);
+      const filename = patientName
+        ? `Explicacion_${patientName.trim().replace(/\s+/gi, "_")}.pdf`
+        : "explicacion_paciente.pdf";
+      const dl = await downloadJsPdfDocument(doc, filename);
+      if (!dl.ok) throw new Error(dl.error || "No se pudo descargar el PDF explicativo.");
     }
   } catch (err) {
     console.error("Error generating native explanation PDF through jsPDF:", err);
-    alert("Ocurrió un error al generar el PDF explicativo: " + String(err));
+    alert(
+      "No se pudo completar la descarga del PDF explicativo. Espere un momento e intente de nuevo.\n\n" +
+        String(err instanceof Error ? err.message : err)
+    );
+    throw err;
   }
 };
