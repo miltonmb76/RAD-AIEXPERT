@@ -22,6 +22,8 @@ grep -q 'Qué estudio se le realizó' src/lib/openaiPatientSummary.ts && echo "O
 grep -q 'finalizePatientAudioScript' src/lib/patientSummaryAudio.ts && echo "OK finalize" || echo "ERROR"
 grep -q 'buildPatientAudioFilename' src/lib/patientSummaryAudio.ts && echo "OK audio filename" || echo "ERROR"
 grep -q 'ensureSpokenScriptKeepsPathology' src/lib/patientSummaryAudio.ts && echo "OK pathology keep" || echo "ERROR"
+grep -q 'bursitis' src/lib/patientSummaryAudio.ts && echo "OK bursitis anchor" || echo "ERROR"
+grep -q 'PRIORIDAD ABSOLUTA' src/lib/openaiPatientSummary.ts && echo "OK findings first" || echo "ERROR"
 grep -q 'sugier' src/lib/patientSummaryAudio.ts && echo "OK sugiere filter" || echo "ERROR"
 grep -q 'En pocas palabras' src/App.tsx && echo "OK whatsapp subtitle" || echo "ERROR"
 

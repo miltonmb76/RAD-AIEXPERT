@@ -281,8 +281,8 @@ export const PatientSummaryAudioBar: React.FC<Props> = ({
         <p className="text-[10px] text-amber-300/90 leading-snug">{error}</p>
       ) : (
         <p className="text-[9px] text-slate-500 leading-snug">
-          El audio usa las mismas dos primeras secciones del PDF explicativo (estudio + en
-          pocas palabras). Sin recomendaciones salvo que marque seguimiento.
+          Prioriza «En pocas palabras» (todos los hallazgos). La descripción del estudio va
+          en una sola frase. Sin recomendaciones salvo que marque seguimiento.
         </p>
       )}
 
