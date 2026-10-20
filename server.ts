@@ -28,9 +28,10 @@ import {
 } from "./src/lib/openaiPatientSummary";
 import {
   buildPatientSummarySpokenScript,
+  ensureSpokenScriptKeepsPathology,
   expandRomanNumeralsForSpeech,
-  finalizePatientAudioScript,
   listPatientSummaryFindingLabels,
+  listPathologyAnchorsFromText,
 } from "./src/lib/patientSummaryAudio";
 import {
   buildInfographicLateralityPromptBlock,
@@ -3883,13 +3884,33 @@ app.post("/api/patient-summary-audio-script", async (req: express.Request, res: 
         followUpText,
         studyType,
         patientFirstName,
-        maxWords: 450,
+        maxWords: 520,
       });
       provider = "local";
       model = "local-builder";
     }
 
-    script = finalizePatientAudioScript(script, { includeFollowUp });
+    // Never let the AI drop pathological findings from «En pocas palabras» (e.g. nefropatía / riñones)
+    const ensured = ensureSpokenScriptKeepsPathology(script, patientSummary, {
+      includeFollowUp,
+      followUpText,
+      studyType,
+      patientFirstName,
+    });
+    script = ensured.script;
+    if (ensured.usedLocalFallback) {
+      provider = "local";
+      model = "local-builder-pathology";
+      console.warn(
+        "Guion audio paciente: IA omitió hallazgos patológicos; usando builder local.",
+        ensured.missingAnchors.join(", ")
+      );
+    } else if (ensured.appendedSentences > 0) {
+      console.warn(
+        "Guion audio paciente: se reinyectaron frases patológicas omitidas:",
+        ensured.missingAnchors.join(", ")
+      );
+    }
 
     return res.json({
       success: true,
@@ -3897,6 +3918,10 @@ app.post("/api/patient-summary-audio-script", async (req: express.Request, res: 
       provider,
       model,
       sourceSections: ["studyOverview", "summary"],
+      pathologyAnchors: listPathologyAnchorsFromText(
+        String(patientSummary.summary || "")
+      ),
+      pathologyAppended: ensured.appendedSentences,
       findingCount: listPatientSummaryFindingLabels(patientSummary).length,
     });
   } catch (error: any) {

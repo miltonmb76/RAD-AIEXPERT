@@ -273,13 +273,20 @@ export function buildPatientSummarySpokenScript(
   parts.push(
     includeFollowUp
       ? "El informe formal queda con su médico tratante."
-      : "Este audio resume las dos primeras secciones de su explicación escrita. El informe formal y cualquier decisión de seguimiento quedan con su médico tratante."
+      : "Este audio resume las dos primeras secciones de su explicación escrita. El informe formal y las decisiones clínicas quedan con su médico tratante."
   );
 
   let script = expandRomanNumeralsForSpeech(cleanWhitespace(parts.join(" ")));
-  // Last resort for TTS length — keep as much of the two sections as possible
+  // Never trim away pathological content from «En pocas palabras»
   if (wordCount(script) > maxWords) {
-    script = expandRomanNumeralsForSpeech(trimToWords(script, maxWords));
+    const anchors = listPathologyAnchorsFromText(inFewWords);
+    const trimmed = expandRomanNumeralsForSpeech(trimToWords(script, maxWords));
+    const stillCovers =
+      !anchors.length ||
+      anchors.every((a) => normalizeSpeechMatchKey(trimmed).includes(a));
+    script = stillCovers
+      ? trimmed
+      : expandRomanNumeralsForSpeech(cleanWhitespace(parts.join(" ")));
   }
   return script;
 }
@@ -295,6 +302,129 @@ export function finalizePatientAudioScript(
     out = filterSpokenSentences(out, false);
   }
   return expandRomanNumeralsForSpeech(out);
+}
+
+/** Clinical / organ tokens that mark pathological content in patient prose. */
+const PATHOLOGY_ANCHOR_RE =
+  /\b(ri[nñ]on(?:es)?|nefropat\w*|renal(?:es)?|h[ií]gado|hepatopat\w*|hepat\w*|ves[ií]cula|bazo|p[aá]ncreas|ovario\w*|anexo\w*|utero|útero|endometrio|mama\w*|tiroides|n[oó]dulo\w*|quiste\w*|lesi[oó]n(?:es)?|masa(?:s)?|tumor\w*|estenosis|trombosis|fibrosis|hidronefrosis|litiasis|esteatosis|cirrosis|colelitiasis|colecist\w*|ascitis|esplenomegalia|dilataci[oó]n|calcific\w*|hemorragi\w*|hematoma|absceso|metavir|bi-?rads|ti-?rads|bosniak|fractura\w*|rotura|desgarro|inflam\w*|infecci\w*|isquemi\w*|infarto|obstrucci[oó]n|esten[oó]tic\w*|hipertensi[oó]n\s+portal|portal)\b/gi;
+
+const NORMAL_ONLY_SENTENCE_RE =
+  /\b(sin (alteraciones?|hallazgos?|lesiones?|evidencia|signos)|dentro de l[ií]mites? normal(?:es)?|aspecto normal|sin patolog[ií]a)\b/i;
+
+/** Pathology / organ anchors from text (accent-insensitive, deduped). */
+export function listPathologyAnchorsFromText(text: string): string[] {
+  const norm = normalizeSpeechMatchKey(text);
+  if (!norm) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = new RegExp(PATHOLOGY_ANCHOR_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(norm)) !== null) {
+    const token = m[0];
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    out.push(token);
+  }
+  return out;
+}
+
+/** True if a «En pocas palabras» sentence carries a pathological finding (not pure “normal”). */
+export function isPathologyHeavySentence(sentence: string): boolean {
+  const s = cleanWhitespace(sentence);
+  if (!s) return false;
+  const anchors = listPathologyAnchorsFromText(s);
+  if (!anchors.length) return false;
+  // Pure normal organ statements are not priority for the audio
+  if (NORMAL_ONLY_SENTENCE_RE.test(s)) return false;
+  return true;
+}
+
+/** Pathology-bearing sentences from «En pocas palabras» that the audio must keep. */
+export function listMustKeepPathologySentences(
+  summary: PatientSummaryAudioInput | null | undefined,
+  includeFollowUp = false
+): string[] {
+  if (!summary) return [];
+  const few = filterSpokenSentences(String(summary.summary || ""), includeFollowUp);
+  return splitSentences(few).filter(isPathologyHeavySentence);
+}
+
+function pathologySentenceCoveredByScript(script: string, sentence: string): boolean {
+  const hay = normalizeSpeechMatchKey(script);
+  const anchors = listPathologyAnchorsFromText(sentence);
+  if (!anchors.length) return true;
+  // Prefer distinctive pathology tokens (nefropatia, fibrosis…) over bare organ names when both exist
+  const distinctive = anchors.filter(
+    (a) =>
+      !/^(rinon|rinones|higado|bazo|pancreas|vesicula|mama|tiroides|utero|ovario|ovarios|anexo|anexos|renal|renales)$/.test(
+        a
+      )
+  );
+  const need = distinctive.length ? distinctive : anchors;
+  return need.some((a) => hay.includes(a));
+}
+
+/**
+ * Ensure the spoken script keeps every pathological sentence from «En pocas palabras».
+ * If the AI omitted many (e.g. nefropatía / riñones), fall back to the local verbatim builder.
+ */
+export function ensureSpokenScriptKeepsPathology(
+  script: string,
+  summary: PatientSummaryAudioInput | null | undefined,
+  opts: {
+    includeFollowUp?: boolean;
+    followUpText?: string | null;
+    studyType?: string | null;
+    patientFirstName?: string | null;
+  } = {}
+): {
+  script: string;
+  missingAnchors: string[];
+  appendedSentences: number;
+  usedLocalFallback: boolean;
+} {
+  const includeFollowUp = opts.includeFollowUp === true;
+  let out = finalizePatientAudioScript(script, { includeFollowUp });
+  const must = listMustKeepPathologySentences(summary, includeFollowUp);
+  if (!must.length || !summary) {
+    return { script: out, missingAnchors: [], appendedSentences: 0, usedLocalFallback: false };
+  }
+
+  const missing = must.filter((s) => !pathologySentenceCoveredByScript(out, s));
+  const missingAnchors = Array.from(
+    new Set(missing.flatMap((s) => listPathologyAnchorsFromText(s)))
+  );
+
+  if (!missing.length) {
+    return { script: out, missingAnchors: [], appendedSentences: 0, usedLocalFallback: false };
+  }
+
+  // AI dropped a meaningful share of pathology → use local script (verbatim filtered sections)
+  if (missing.length / must.length >= 0.34) {
+    const local = buildPatientSummarySpokenScript(summary, {
+      includeFollowUp,
+      followUpText: opts.followUpText,
+      studyType: opts.studyType,
+      patientFirstName: opts.patientFirstName,
+      maxWords: 520,
+    });
+    return {
+      script: finalizePatientAudioScript(local, { includeFollowUp }),
+      missingAnchors,
+      appendedSentences: 0,
+      usedLocalFallback: true,
+    };
+  }
+
+  out = expandRomanNumeralsForSpeech(
+    cleanWhitespace(`${out} ${missing.join(" ")}`)
+  );
+  return {
+    script: out,
+    missingAnchors,
+    appendedSentences: missing.length,
+    usedLocalFallback: false,
+  };
 }
 
 /** Titles of findings the spoken script is expected to cover (for QA / AI prompts). */
@@ -479,26 +609,38 @@ export async function fetchPatientSummaryAudioScript(opts: {
   });
   const json = await res.json().catch(() => ({} as any));
   if (!res.ok || !json?.success || !json?.script) {
-    // Local fallback — first 2 PDF sections
+    // Local fallback — first 2 PDF sections, pathology preserved
     const local = buildPatientSummarySpokenScript(opts.patientSummary, {
       includeFollowUp: opts.includeFollowUp,
       followUpText: opts.followUpText,
       studyType: opts.studyType,
       patientFirstName: opts.patientFirstName,
-      maxWords: 450,
+      maxWords: 520,
+    });
+    const ensured = ensureSpokenScriptKeepsPathology(local, opts.patientSummary, {
+      includeFollowUp: opts.includeFollowUp,
+      followUpText: opts.followUpText,
+      studyType: opts.studyType,
+      patientFirstName: opts.patientFirstName,
     });
     return {
-      script: finalizePatientAudioScript(local, {
-        includeFollowUp: opts.includeFollowUp,
-      }),
+      script: ensured.script,
       provider: "local-fallback",
       findingCount: listPatientSummaryFindingLabels(opts.patientSummary).length,
     };
   }
-  return {
-    script: finalizePatientAudioScript(String(json.script), {
+  const ensured = ensureSpokenScriptKeepsPathology(
+    String(json.script),
+    opts.patientSummary,
+    {
       includeFollowUp: opts.includeFollowUp,
-    }),
+      followUpText: opts.followUpText,
+      studyType: opts.studyType,
+      patientFirstName: opts.patientFirstName,
+    }
+  );
+  return {
+    script: ensured.script,
     provider: String(json.provider || "server"),
     findingCount: Number(json.findingCount) || 0,
   };

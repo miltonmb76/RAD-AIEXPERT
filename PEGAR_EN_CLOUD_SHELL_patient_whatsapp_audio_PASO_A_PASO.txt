@@ -21,6 +21,7 @@ grep -q 'patient-summary-audio-script' server.ts && echo "OK audio script api" |
 grep -q 'Qué estudio se le realizó' src/lib/openaiPatientSummary.ts && echo "OK audio 2 sections" || echo "ERROR"
 grep -q 'finalizePatientAudioScript' src/lib/patientSummaryAudio.ts && echo "OK finalize" || echo "ERROR"
 grep -q 'buildPatientAudioFilename' src/lib/patientSummaryAudio.ts && echo "OK audio filename" || echo "ERROR"
+grep -q 'ensureSpokenScriptKeepsPathology' src/lib/patientSummaryAudio.ts && echo "OK pathology keep" || echo "ERROR"
 grep -q 'sugier' src/lib/patientSummaryAudio.ts && echo "OK sugiere filter" || echo "ERROR"
 grep -q 'En pocas palabras' src/App.tsx && echo "OK whatsapp subtitle" || echo "ERROR"
 
