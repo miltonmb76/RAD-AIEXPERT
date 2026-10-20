@@ -245,11 +245,93 @@ export function extractInfographicLaterality(args: {
 }
 
 /**
+ * Landmark checklist for unilateral extremity close-ups (shoulder, knee, etc.).
+ * Image models often default to a RIGHT-limb template and only change the title —
+ * this forces the anatomy silhouette to match the patient side.
+ */
+export function buildExtremityLateralityLandmarkBrief(
+  orientation: InfographicViewOrientation,
+  extracted: InfographicLateralityExtract,
+  contextText?: string
+): string {
+  const side =
+    extracted.side === "right" || extracted.side === "left"
+      ? extracted.side
+      : extracted.mentions.find((m) => m.side === "right" || m.side === "left")?.side;
+  if (!side) return "";
+
+  const blob = normalize(
+    `${contextText || ""} ${extracted.summary} ${extracted.mentions.map((m) => m.structure).join(" ")}`
+  );
+  const isShoulder =
+    /\bhombro\b|\bmanguito\b|\bsupraespinoso\b|\binfraespinoso\b|\bsubescapular\b|\bacromion\b|\bbursa\b|\bclavicula\b|\bcoracoid|\btroquiter\b|\bhumer[oa]\b/.test(
+      blob
+    );
+  const isKnee = /\brodilla\b|\bmenisco\b|\bcua\w*driceps\b|\brotula\b|\bfemur\b|\btibia\b/.test(blob);
+  const isHip = /\bcadera\b|\bacetabul|\bfemur proximal\b|\bcabeza femoral\b/.test(blob);
+  if (!isShoulder && !isKnee && !isHip) return "";
+
+  const lines: string[] = [
+    "CHECKLIST DE SILUETA (close-up unilateral — el título y el dibujo DEBEN coincidir):",
+  ];
+
+  if (isShoulder && orientation === "AP") {
+    if (side === "left") {
+      lines.push(
+        "- HOMBRO IZQUIERDO del paciente (AP / de frente), close-up:",
+        "  · Brazo / troquíter / lado LATERAL del húmero → a la DERECHA del cuadro.",
+        "  · Clavícula hacia el esternón (medial) → apunta hacia la IZQUIERDA del cuadro.",
+        "  · Acromion más lateral (cerca del brazo) → lado DERECHO del cuadro.",
+        "  · Título y callouts: «hombro izquierdo» / «izquierdo (del paciente)».",
+        "  · Si tu plantilla por defecto es un hombro derecho, ESPEJA HORIZONTALMENTE la anatomía antes de etiquetar.",
+        "  · FALLO CRÍTICO: troquíter a la IZQUIERDA del cuadro con título «hombro izquierdo» (eso es anatomía de hombro DERECHO mal etiquetada)."
+      );
+    } else {
+      lines.push(
+        "- HOMBRO DERECHO del paciente (AP / de frente), close-up:",
+        "  · Brazo / troquíter / lado LATERAL del húmero → a la IZQUIERDA del cuadro.",
+        "  · Clavícula hacia el esternón (medial) → apunta hacia la DERECHA del cuadro.",
+        "  · Acromion más lateral (cerca del brazo) → lado IZQUIERDO del cuadro.",
+        "  · Título y callouts: «hombro derecho» / «derecho (del paciente)».",
+        "  · FALLO CRÍTICO: troquíter a la DERECHA del cuadro con título «hombro derecho»."
+      );
+    }
+  } else if (isShoulder && orientation === "PA") {
+    lines.push(
+      side === "left"
+        ? "- HOMBRO IZQUIERDO (PA / de espaldas): brazo/troquíter a la IZQUIERDA del cuadro; etiqueta «hombro izquierdo»."
+        : "- HOMBRO DERECHO (PA / de espaldas): brazo/troquíter a la DERECHA del cuadro; etiqueta «hombro derecho»."
+    );
+  }
+
+  if (isKnee && orientation === "AP") {
+    lines.push(
+      side === "left"
+        ? "- RODILLA IZQUIERDA (AP): extremidad en la DERECHA del cuadro; etiqueta «rodilla izquierda (del paciente)»."
+        : "- RODILLA DERECHA (AP): extremidad en la IZQUIERDA del cuadro; etiqueta «rodilla derecha (del paciente)»."
+    );
+  }
+  if (isHip && orientation === "AP") {
+    lines.push(
+      side === "left"
+        ? "- CADERA IZQUIERDA (AP): en la DERECHA del cuadro; etiqueta «cadera izquierda (del paciente)»."
+        : "- CADERA DERECHA (AP): en la IZQUIERDA del cuadro; etiqueta «cadera derecha (del paciente)»."
+    );
+  }
+
+  lines.push(
+    "- Coherencia título↔dibujo: el lado escrito en el título DEBE ser el mismo lado anatómico dibujado (no solo cambiar el texto)."
+  );
+  return lines.join("\n");
+}
+
+/**
  * Locked placement instructions for the image model (character-level clarity).
  */
 export function buildLateralityPlacementBrief(
   orientation: InfographicViewOrientation,
-  extracted: InfographicLateralityExtract
+  extracted: InfographicLateralityExtract,
+  contextText?: string
 ): string {
   const orientLabel =
     orientation === "PA"
@@ -259,8 +341,19 @@ export function buildLateralityPlacementBrief(
   const lines: string[] = [
     "GUION DE LATERALIDAD BLOQUEADO (prioridad máxima — fallar esto invalida la imagen):",
     `- Orientación de la figura: ${orientLabel}.`,
+    `- Convención radiológica: la DERECHA/IZQUIERDA es SIEMPRE del PACIENTE, no del observador ni de la pantalla.`,
     `- ${extracted.summary}`,
   ];
+
+  if (orientation === "AP") {
+    lines.push(
+      "- AP (paciente DE FRENTE): derecha del paciente = IZQUIERDA de la pantalla; izquierda del paciente = DERECHA de la pantalla."
+    );
+  } else {
+    lines.push(
+      "- PA (paciente DE ESPALDAS): derecha del paciente = DERECHA de la pantalla; izquierda del paciente = IZQUIERDA de la pantalla."
+    );
+  }
 
   const focusSides =
     extracted.side === "right" || extracted.side === "left" || extracted.side === "bilateral"
@@ -308,8 +401,18 @@ export function buildLateralityPlacementBrief(
     );
   }
 
+  const landmarkBrief = buildExtremityLateralityLandmarkBrief(
+    orientation,
+    extracted,
+    contextText
+  );
+  if (landmarkBrief) {
+    lines.push(landmarkBrief);
+  }
+
   lines.push(
-    "- PROHIBIDO: invertir el lado «para que se vea mejor», poner la lesión en el lado contrario, o etiquetar D/I del observador en vez del paciente.",
+    "- PROHIBIDO: dibujar anatomía de un lado y poner el título del lado contrario (p. ej. silueta de hombro derecho + título «hombro izquierdo»).",
+    "- PROHIBIDO: invertir el lado «para que se vea mejor», o etiquetar D/I del observador en vez del paciente.",
     "- Si no hay lateralidad en el informe, NO inventes derecha/izquierda."
   );
 
@@ -426,7 +529,8 @@ export function mergeLateralityIntoCopyPlan<T extends {
 /** Prompt block injected into /api/generate-infographic */
 export function buildInfographicLateralityPromptBlock(
   orientation: InfographicViewOrientation,
-  extracted?: InfographicLateralityExtract | null
+  extracted?: InfographicLateralityExtract | null,
+  contextText?: string
 ): string {
   const base =
     orientation === "PA"
@@ -442,19 +546,19 @@ REGLA CRÍTICA DE LATERALIDAD — PACIENTE VISTO DE ESPALDAS (vista PA / postero
 `
       : `
 REGLA CRÍTICA DE LATERALIDAD — PACIENTE VISTO DE FRENTE (vista AP / anteroposterior / coronal / anterior):
-- La figura muestra al paciente MIRANDO HACIA EL OBSERVADOR (de frente).
-- "Derecha" / "Izquierda" = lado ANATÓMICO DEL PACIENTE.
-- Como está de frente (regla de espejo): el LADO DERECHO DEL PACIENTE queda a la IZQUIERDA DEL CUADRO; el LADO IZQUIERDO DEL PACIENTE queda a la DERECHA DEL CUADRO.
-- Ejemplo: lesión en hombro DERECHO → dibújala en el hombro que aparece a la IZQUIERDA de la imagen y etiquétalo "Hombro derecho (del paciente)".
-- Ejemplo: rodilla IZQUIERDA → a la DERECHA del cuadro, etiqueta "Rodilla izquierda (del paciente)".
-- Etiqueta siempre con el lado del paciente. PROHIBIDO espejar anatomía "para que quede bonito".
-- Una imagen bella con lateralidad incorrecta es un FALLO CRÍTICO.
+- La figura muestra al paciente MIRANDO HACIA EL OBSERVADOR (de frente), como en una radiografía AP.
+- "Derecha" / "Izquierda" = lado ANATÓMICO DEL PACIENTE (NO la derecha/izquierda de la pantalla).
+- Regla de espejo AP: la DERECHA DEL PACIENTE = IZQUIERDA DE LA PANTALLA; la IZQUIERDA DEL PACIENTE = DERECHA DE LA PANTALLA.
+- Ejemplo close-up: hombro DERECHO del paciente → brazo/troquíter a la IZQUIERDA del cuadro; título «Hombro derecho».
+- Ejemplo close-up: hombro IZQUIERDO del paciente → brazo/troquíter a la DERECHA del cuadro; título «Hombro izquierdo».
+- NUNCA dibujes la silueta de un hombro derecho y le pongas título «hombro izquierdo» (error frecuente). Si tu plantilla es derecha, ESPEJA el dibujo para el lado izquierdo.
+- Etiqueta siempre con el lado del paciente. Una imagen bella con lateralidad incorrecta es un FALLO CRÍTICO.
 `;
 
-  if (!extracted || extracted.side === "unspecified" && !extracted.mentions.length) {
+  if (!extracted || (extracted.side === "unspecified" && !extracted.mentions.length)) {
     return base.trim();
   }
   return `${base.trim()}
 
-${buildLateralityPlacementBrief(orientation, extracted)}`;
+${buildLateralityPlacementBrief(orientation, extracted, contextText)}`;
 }

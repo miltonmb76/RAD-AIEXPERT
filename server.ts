@@ -1801,9 +1801,20 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       diagnosisAnchor: String(diagnosisAnchor || topic || "").trim(),
       correctionNotes: String(correctionNotes || ""),
     });
+    // Study/topic/report context so extremity landmark checklists fire even when
+    // the study-laterality field only says "Izquierdo" without naming the organ.
+    const lateralityContextText = [
+      String(studyType || ""),
+      String(topicText || topic || ""),
+      String(diagnosisAnchor || "").trim(),
+      reportForInfographic,
+    ]
+      .filter(Boolean)
+      .join("\n");
     const lateralityBlock = buildInfographicLateralityPromptBlock(
       orientation,
-      lateralityExtract
+      lateralityExtract,
+      lateralityContextText
     );
     const breastClockBlock = buildInfographicBreastClockBrief({
       report: reportForInfographic,
