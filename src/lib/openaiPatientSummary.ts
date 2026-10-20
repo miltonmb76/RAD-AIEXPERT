@@ -190,41 +190,40 @@ export async function generatePatientSummaryAudioScriptOpenAI(args: {
   );
 
   const system = includeFollowUp
-    ? "Eres redactor de guiones hablados para pacientes de radiología. PRIORIDAD: no omitir ningún hallazgo patológico de «En pocas palabras». Puedes mencionar seguimiento solo si se te da texto de seguimiento."
-    : "Eres redactor de guiones hablados para pacientes de radiología. PRIORIDAD: no omitir ningún hallazgo patológico de «En pocas palabras» (riñones, nefropatía, hígado, lesiones, etc.). PROHIBIDO recomendaciones, tratamiento, controles, biopsias o 'qué hacer'.";
+    ? "Eres redactor de guiones hablados para pacientes de radiología. PRIORIDAD ABSOLUTA: los hallazgos de «En pocas palabras». La descripción del estudio debe ser mínima (1 frase). Puedes mencionar seguimiento solo si se te da texto."
+    : "Eres redactor de guiones hablados para pacientes de radiología. PRIORIDAD ABSOLUTA: los hallazgos de «En pocas palabras» (bursitis, tendinopatía, fracturas, nefropatía, etc.). La descripción del estudio = máximo 1 frase corta. PROHIBIDO explicar cómo funciona el ultrasonido. PROHIBIDO recomendaciones/tratamiento.";
 
-  const user = `Redacta un GUION HABLADO en español (para audio WhatsApp) usando SOLO estas dos secciones del PDF de explicación al paciente.
+  const user = `Redacta un GUION HABLADO en español (para audio WhatsApp).
 
 Nombre (opcional): ${args.patientFirstName || "(sin nombre)"}
 Estudio: ${args.studyType || "(no especificado)"}
 Incluir seguimiento: ${includeFollowUp ? "SÍ" : "NO"}
 Texto de seguimiento (solo si aplica): ${includeFollowUp ? args.followUpText || "" : "(no usar)"}
 
-SECCIÓN 1 — Qué estudio se le realizó:
+SECCIÓN 1 — Qué estudio se le realizó (SOLO para una frase corta de contexto; NO expandir):
 ${studyOverview || "(vacía)"}
 
-SECCIÓN 2 — En pocas palabras:
+SECCIÓN 2 — En pocas palabras (ESTA ES LA PRIORIDAD; cubrir TODOS los hallazgos):
 ${summary || "(vacía)"}
 
-Hallazgos patológicos que DEBEN aparecer en el audio (si la lista no está vacía): ${
-    pathologyAnchors.length ? pathologyAnchors.join(" · ") : "(derivar de la sección 2)"
+Hallazgos que DEBEN aparecer en el audio: ${
+    pathologyAnchors.length ? pathologyAnchors.join(" · ") : "(todos los de la sección 2)"
   }
-Frases patológicas a conservar (sentido clínico, no hace falta citar literal):
-${mustSentences.length ? mustSentences.map((s, i) => `${i + 1}. ${s}`).join("\n") : "(ninguna marcada)"}
+Frases de hallazgos a conservar:
+${mustSentences.length ? mustSentences.map((s, i) => `${i + 1}. ${s}`).join("\n") : "(toda la sección 2)"}
 
 REGLAS OBLIGATORIAS:
-1. Fuente de verdad: únicamente las dos secciones anteriores. No inventes hallazgos.
-2. PRIORIDAD MÁXIMA: todo hallazgo patológico de la sección 2 debe mencionarse. Si habla de nefropatía, riñones, hígado, ovario, nódulos, etc., NO los omitas aunque el texto sea largo.
-3. Puedes alisar el texto para que suene hablado, pero sin eliminar órganos ni patologías.
-4. Estructura: saludo breve → narrar sección 1 → narrar sección 2 completa en sentido clínico → cierre breve.
-5. Frases claras, tono profesional y cálido. Sin markdown, sin viñetas, sin comillas decorativas.
+1. PRIORIDAD: sección 2 completa en sentido clínico. Nunca omitas bursitis, tendinopatía, pinzamiento, Hill-Sachs, calcificaciones, nefropatía, riñones u otros hallazgos descritos ahí.
+2. Sección 1: MÁXIMO una frase corta del tipo «Se le realizó ultrasonido del hombro derecho». NO expliques ondas sonoras, técnica ni para qué sirve el estudio en general.
+3. Estructura: saludo breve → 1 frase del estudio → narrar TODOS los hallazgos de «En pocas palabras» → cierre breve.
+4. Si hay que acortar, acorta SOLO la sección 1. Nunca la sección 2.
+5. Frases claras, tono profesional y cálido. Sin markdown ni viñetas.
 6. ${
     includeFollowUp
       ? "Puedes añadir al final el seguimiento indicado."
       : "NO menciones recomendaciones, tratamiento ni plan de seguimiento."
   }
-7. Longitud: la necesaria para cubrir los hallazgos patológicos (aprox. 45 a 180 segundos). Mejor un poco más largo que omitir un riñón o una nefropatía.
-8. Responde SOLO con el texto del guion.`;
+7. Responde SOLO con el texto del guion.`;
 
   const completion = await openai.chat.completions.create({
     model,

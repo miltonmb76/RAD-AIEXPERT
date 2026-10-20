@@ -38,9 +38,13 @@ export type BuildPatientAudioOpts = {
   maxWords?: number;
 };
 
-/** Advice / treatment language — conjugations: recomienda ≠ recomend*, sugiere ≠ suger*. */
+/**
+ * Advice / treatment language.
+ * Note: diagnostic «lo que sugiere pinzamiento/bursitis» is NOT follow-up —
+ * only actionable «se sugiere control/biopsia/…».
+ */
 const FOLLOW_UP_RE =
-  /\b(recomiend\w*|recomend\w*|sugier\w*|suger\w*|tratamiento|terap[eé]ut\w*|medicaci[oó]n|cirug[ií]a|biopsia|intervenci[oó]n|deber[ií]a|debe\b|hay que\b|conviene\b|es importante que\b|seguimiento|control (en|a los|cada|ecogr[aá]fico|peri[oó]dico)|pr[oó]xim[oa]s?\s+pasos|qu[eé] hacer|manejo|derivaci[oó]n|referir|urgencias?|alarma|h[aá]bitos?|ejercicios?|cuidados?|preguntas?\s+para\s+su\s+m[eé]dico|plan de (manejo|seguimiento|tratamiento))\b/i;
+  /\b(recomiend\w*|recomend\w*|se sugiere\b.{0,48}\b(control|biopsia|tratamiento|seguimiento|cirug|derivaci|valoraci[oó]n|manejo|revisi[oó]n|terapia|medicaci)|tratamiento|terap[eé]ut\w*|medicaci[oó]n|cirug[ií]a|biopsia|intervenci[oó]n|deber[ií]a|debe\b|hay que\b|conviene\b|es importante que\b|seguimiento|control (en|a los|cada|ecogr[aá]fico|peri[oó]dico)|pr[oó]xim[oa]s?\s+pasos|qu[eé] hacer|manejo|derivaci[oó]n|referir|urgencias?|alarma|h[aá]bitos?|ejercicios?|cuidados?|preguntas?\s+para\s+su\s+m[eé]dico|plan de (manejo|seguimiento|tratamiento))\b/i;
 
 const CLASSIFICATION_KEEP_RE =
   /\b(bi-?rads|ti-?rads|bosniak|metavir|fleischner|acr|categoria|categor[ií]a|grado|estadio)\b/i;
@@ -200,9 +204,9 @@ export function firstSentences(text: string, maxSentences: number): string {
 }
 
 /**
- * Build a spoken script from the first 2 sections of the patient PDF:
- * «Qué estudio se le realizó» + «En pocas palabras».
- * Falls back to keyFindings only if both sections are empty.
+ * Build a spoken script from the first 2 sections of the patient PDF.
+ * Priority: «En pocas palabras» (all findings) ≫ short «Qué estudio se le realizó».
+ * Falls back to keyFindings only if En pocas palabras is empty.
  */
 export function buildPatientSummarySpokenScript(
   summary: PatientSummaryAudioInput | null | undefined,
@@ -210,28 +214,28 @@ export function buildPatientSummarySpokenScript(
 ): string {
   if (!summary) return "";
   const includeFollowUp = opts.includeFollowUp === true;
-  const maxWords = Math.max(80, Math.min(700, opts.maxWords ?? 450));
+  // Soft ceiling — findings from «En pocas palabras» are never cut to fit.
+  const maxWords = Math.max(80, Math.min(800, opts.maxWords ?? 520));
 
   const name = cleanWhitespace(String(opts.patientFirstName || "").split(/\s+/)[0] || "");
   const study = cleanWhitespace(String(opts.studyType || ""));
   const greeting = name ? `Hola ${name}.` : "Hola.";
 
-  // Section 1 — Qué estudio se le realizó
-  const overview = filterSpokenSentences(
+  // Section 1 — Qué estudio se le realizó → MAX 1 short sentence (no method/tech filler)
+  const overviewRaw = filterSpokenSentences(
     String(summary.studyOverview || ""),
     includeFollowUp
   );
-  // Section 2 — En pocas palabras
+  const overviewShort = overviewRaw
+    ? firstSentences(overviewRaw, 1)
+    : study
+      ? `Le explicamos los hallazgos de su estudio de ${study}.`
+      : "Le explicamos los hallazgos de su estudio.";
+
+  // Section 2 — En pocas palabras → FULL (minus follow-up language)
   const inFewWords = filterSpokenSentences(String(summary.summary || ""), includeFollowUp);
 
-  const parts: string[] = [greeting];
-  if (overview) {
-    parts.push(overview);
-  } else if (study) {
-    parts.push(`Le explicamos de forma breve su estudio de ${study}.`);
-  } else {
-    parts.push("Le explicamos de forma breve los hallazgos de su estudio.");
-  }
+  const parts: string[] = [greeting, overviewShort];
 
   if (inFewWords) {
     parts.push(inFewWords);
@@ -273,21 +277,24 @@ export function buildPatientSummarySpokenScript(
   parts.push(
     includeFollowUp
       ? "El informe formal queda con su médico tratante."
-      : "Este audio resume las dos primeras secciones de su explicación escrita. El informe formal y las decisiones clínicas quedan con su médico tratante."
+      : "Este audio prioriza los hallazgos de su explicación escrita. El informe formal y las decisiones clínicas quedan con su médico tratante."
   );
 
   let script = expandRomanNumeralsForSpeech(cleanWhitespace(parts.join(" ")));
-  // Never trim away pathological content from «En pocas palabras»
-  if (wordCount(script) > maxWords) {
-    const anchors = listPathologyAnchorsFromText(inFewWords);
-    const trimmed = expandRomanNumeralsForSpeech(trimToWords(script, maxWords));
-    const stillCovers =
-      !anchors.length ||
-      anchors.every((a) => normalizeSpeechMatchKey(trimmed).includes(a));
-    script = stillCovers
-      ? trimmed
-      : expandRomanNumeralsForSpeech(cleanWhitespace(parts.join(" ")));
+  // If over budget: NEVER cut «En pocas palabras»; only drop the overview sentence
+  if (wordCount(script) > maxWords && overviewRaw) {
+    const withoutOverview = expandRomanNumeralsForSpeech(
+      cleanWhitespace(
+        [greeting, inFewWords, follow ? `Sobre el seguimiento: ${follow}` : "", parts[parts.length - 1]]
+          .filter(Boolean)
+          .join(" ")
+      )
+    );
+    if (wordCount(withoutOverview) <= maxWords || listPathologyAnchorsFromText(inFewWords).length) {
+      script = withoutOverview;
+    }
   }
+  // Still over budget: keep full findings; allow slightly over TTS soft limit
   return script;
 }
 
@@ -306,10 +313,10 @@ export function finalizePatientAudioScript(
 
 /** Clinical / organ tokens that mark pathological content in patient prose. */
 const PATHOLOGY_ANCHOR_RE =
-  /\b(ri[nñ]on(?:es)?|nefropat\w*|renal(?:es)?|h[ií]gado|hepatopat\w*|hepat\w*|ves[ií]cula|bazo|p[aá]ncreas|ovario\w*|anexo\w*|utero|útero|endometrio|mama\w*|tiroides|n[oó]dulo\w*|quiste\w*|lesi[oó]n(?:es)?|masa(?:s)?|tumor\w*|estenosis|trombosis|fibrosis|hidronefrosis|litiasis|esteatosis|cirrosis|colelitiasis|colecist\w*|ascitis|esplenomegalia|dilataci[oó]n|calcific\w*|hemorragi\w*|hematoma|absceso|metavir|bi-?rads|ti-?rads|bosniak|fractura\w*|rotura|desgarro|inflam\w*|infecci\w*|isquemi\w*|infarto|obstrucci[oó]n|esten[oó]tic\w*|hipertensi[oó]n\s+portal|portal)\b/gi;
+  /\b(ri[nñ]on(?:es)?|nefropat\w*|renal(?:es)?|h[ií]gado|hepatopat\w*|hepat\w*|ves[ií]cula|bazo|p[aá]ncreas|ovario\w*|anexo\w*|utero|útero|endometrio|mama\w*|tiroides|n[oó]dulo\w*|quiste\w*|lesi[oó]n(?:es)?|masa(?:s)?|tumor\w*|estenosis|trombosis|fibrosis|hidronefrosis|litiasis|esteatosis|cirrosis|colelitiasis|colecist\w*|ascitis|esplenomegalia|dilataci[oó]n|calcific\w*|hemorragi\w*|hematoma|absceso|metavir|bi-?rads|ti-?rads|bosniak|fractura\w*|rotura|desgarro|desinserci[oó]n|inflam\w*|infecci\w*|isquemi\w*|infarto|obstrucci[oó]n|esten[oó]tic\w*|hipertensi[oó]n\s+portal|portal|bursitis|bursa\w*|tendinopat\w*|tendinitis|pinzamiento|impingement|hill[-\s]?sachs|bankart|supraespinoso|infraespinoso|subescapular|manguito|luxaci[oó]n|subluxaci[oó]n|derrame|edema|contusi[oó]n|hernia\w*)\b/gi;
 
 const NORMAL_ONLY_SENTENCE_RE =
-  /\b(sin (alteraciones?|hallazgos?|lesiones?|evidencia|signos)|dentro de l[ií]mites? normal(?:es)?|aspecto normal|sin patolog[ií]a)\b/i;
+  /\b(sin (alteraciones?|hallazgos?|lesiones?|evidencia|signos)|dentro de l[ií]mites? normal(?:es)?|aspecto normal|condiciones? normales?|sin patolog[ií]a)\b/i;
 
 /** Pathology / organ anchors from text (accent-insensitive, deduped). */
 export function listPathologyAnchorsFromText(text: string): string[] {
@@ -399,30 +406,41 @@ export function ensureSpokenScriptKeepsPathology(
     return { script: out, missingAnchors: [], appendedSentences: 0, usedLocalFallback: false };
   }
 
-  // AI dropped a meaningful share of pathology → use local script (verbatim filtered sections)
-  if (missing.length / must.length >= 0.34) {
+  // Any omitted pathology (e.g. bursitis) → prefer local: short study + FULL En pocas palabras
+  if (missing.length >= 1) {
     const local = buildPatientSummarySpokenScript(summary, {
       includeFollowUp,
       followUpText: opts.followUpText,
       studyType: opts.studyType,
       patientFirstName: opts.patientFirstName,
-      maxWords: 520,
+      maxWords: 600,
     });
+    const localFinal = finalizePatientAudioScript(local, { includeFollowUp });
+    const stillMissing = must.filter((s) => !pathologySentenceCoveredByScript(localFinal, s));
+    if (!stillMissing.length) {
+      return {
+        script: localFinal,
+        missingAnchors,
+        appendedSentences: 0,
+        usedLocalFallback: true,
+      };
+    }
+    // Append any residual pathology sentences the local path somehow missed
+    out = expandRomanNumeralsForSpeech(
+      cleanWhitespace(`${localFinal} ${stillMissing.join(" ")}`)
+    );
     return {
-      script: finalizePatientAudioScript(local, { includeFollowUp }),
+      script: out,
       missingAnchors,
-      appendedSentences: 0,
+      appendedSentences: stillMissing.length,
       usedLocalFallback: true,
     };
   }
 
-  out = expandRomanNumeralsForSpeech(
-    cleanWhitespace(`${out} ${missing.join(" ")}`)
-  );
   return {
     script: out,
-    missingAnchors,
-    appendedSentences: missing.length,
+    missingAnchors: [],
+    appendedSentences: 0,
     usedLocalFallback: false,
   };
 }

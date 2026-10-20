@@ -24,6 +24,12 @@ describe("patientSummaryAudio", () => {
     expect(isFollowUpLikeSentence("Se recomienda control en 6 meses.")).toBe(true);
     expect(isFollowUpLikeSentence("Se recomienda control.")).toBe(true);
     expect(isFollowUpLikeSentence("Se sugiere control.")).toBe(true);
+    // Diagnostic "sugiere" must NOT be treated as advice
+    expect(
+      isFollowUpLikeSentence(
+        "También se observó bursitis, lo que sugiere un pinzamiento subacromial."
+      )
+    ).toBe(false);
     expect(isFollowUpLikeSentence("Hay un nódulo sólido de 8 mm en mama derecha.")).toBe(
       false
     );
@@ -81,6 +87,30 @@ describe("patientSummaryAudio", () => {
     expect(withFollow.toLowerCase()).toContain("bi-rads");
   });
 
+  it("shortens Qué estudio and keeps bursitis from En pocas palabras", () => {
+    const summary = {
+      studyOverview:
+        "Se realizó un ultrasonido del hombro derecho para evaluar la articulación y los tejidos circundantes después de un trauma. Este estudio utiliza ondas sonoras para crear imágenes detalladas de los músculos, tendones y otras estructuras del hombro. Permite identificar cambios en los tejidos blandos.",
+      summary:
+        "El ultrasonido del hombro derecho mostró que el tendón del bíceps y otros tendones del manguito rotador están en condiciones normales. Sin embargo, el tendón supraespinoso presenta calcificaciones, lo que indica una tendinopatía calcificante. También se observó bursitis en la bursa subacromiodeltoidea, lo que sugiere un pinzamiento subacromial. Además, se identificó una fractura de Hill-Sachs en la cabeza del húmero.",
+    };
+    const script = buildPatientSummarySpokenScript(summary, { includeFollowUp: false });
+    expect(script.toLowerCase()).toContain("bursitis");
+    expect(script.toLowerCase()).toMatch(/tendinopat|calcific/);
+    expect(script.toLowerCase()).toMatch(/hill|fractura/);
+    expect(script.toLowerCase()).toMatch(/pinzamiento/);
+    // Must not spend the audio explaining ultrasound physics
+    expect(script.toLowerCase()).not.toContain("ondas sonoras");
+    expect(script.toLowerCase()).not.toContain("permite identificar cambios");
+
+    const incompleteAi =
+      "Hola. Se realizó un ultrasonido del hombro derecho para evaluar la articulación tras un trauma. El manguito rotador está en condiciones normales y hay calcificaciones en el supraespinoso. El informe queda con su médico.";
+    const { script: fixed } = ensureSpokenScriptKeepsPathology(incompleteAi, summary, {
+      includeFollowUp: false,
+    });
+    expect(fixed.toLowerCase()).toContain("bursitis");
+  });
+
   it("keeps nefropatía / riñones when AI omits them from En pocas palabras", () => {
     const summary = {
       studyOverview: "Se realizó ecografía de abdomen.",
@@ -127,13 +157,11 @@ describe("patientSummaryAudio", () => {
       { includeFollowUp: false, maxWords: 300 }
     );
     expect(script.toLowerCase()).toContain("abdomen");
-    expect(script.toLowerCase()).toContain("hígado");
-    expect(script.toLowerCase()).toContain("riñones");
     expect(script.toLowerCase()).toContain("ovario");
     expect(script.toLowerCase()).toContain("quística");
     expect(script.toLowerCase()).not.toMatch(/recomend|control en 6/);
     expect(script.toLowerCase()).not.toContain("detalle de ficha");
-    expect(script.toLowerCase()).toContain("dos primeras secciones");
+    expect(script.toLowerCase()).toMatch(/prioriza los hallazgos|explicación escrita/);
   });
 
   it("falls back to keyFindings only when En pocas palabras is empty", () => {
