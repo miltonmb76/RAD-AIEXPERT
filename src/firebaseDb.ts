@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { app, auth, getFirebaseConfig } from "./firebaseAuth";
 import { initializeApp, deleteApp } from "firebase/app";
+import { singleFlight } from "./lib/concurrentTasks";
 
 const activeConfig = getFirebaseConfig();
 
@@ -290,7 +291,7 @@ export const deleteStudyFromCloud = async (studyId: string): Promise<void> => {
 /**
  * Fetches all studies for a specific user from Firestore ordered by createdAt desc (sorted in memory)
  */
-export const getStudiesFromCloud = async (userId: string): Promise<CloudStudy[]> => {
+export const getStudiesFromCloud = singleFlight(async (userId: string): Promise<CloudStudy[]> => {
   if (!userId) return [];
 
   const path = "clinical_studies";
@@ -354,7 +355,7 @@ export const getStudiesFromCloud = async (userId: string): Promise<CloudStudy[]>
     console.error("Firestore getDocs failed:", error);
     throw error;
   }
-};
+});
 
 /**
  * Fetches a single study publicly by its ID

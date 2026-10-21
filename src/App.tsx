@@ -260,8 +260,7 @@ import { isPdfGenerationBusy, runSafeAsync } from "./lib/safeAsync";
 
 export default function App() {
   // Soft-recover remounts App; hydrate critical fields from sessionStorage draft.
-  const bootDraftRef = useRef(loadActiveSessionDraft());
-  const bootDraft = bootDraftRef.current;
+  const [bootDraft] = useState(() => loadActiveSessionDraft());
   const [showSessionDraftBanner, setShowSessionDraftBanner] = useState(() =>
     draftHasReport(bootDraft)
   );
@@ -7957,7 +7956,7 @@ Ejemplo:
                                        >
                                          <div className="aspect-[4/3] bg-black relative">
                                            {thumb ? (
-                                             <img src={thumb} alt={String(caption)} className="w-full h-full object-cover" />
+                                             <img loading="lazy" decoding="async" src={thumb} alt={String(caption)} className="w-full h-full object-cover" />
                                            ) : (
                                              <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-600">Sin imagen</div>
                                            )}
@@ -10365,7 +10364,7 @@ Ejemplo:
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                       {attachedImages.map((img) => (
                                         <div key={img.id} className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex flex-col gap-2">
-                                          <img src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded bg-black border border-slate-950" />
+                                          <img loading="lazy" decoding="async" src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded bg-black border border-slate-950" />
                                           {img.caption && (
                                             <div className="text-xs font-semibold text-slate-300 italic text-center mt-1">“{img.caption}”</div>
                                           )}
@@ -10602,7 +10601,7 @@ Ejemplo:
                                             {currentModality === "MMG" ? "MMG" : "US"}
                                           </span>
                                         </div>
-                                        <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                                        <img loading="lazy" decoding="async" src={img.url} alt={img.name} className="w-full h-full object-cover" />
                                         {img.isDicom && (
                                           <span className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-cyan-600 text-white font-mono text-[8px] font-extrabold rounded select-none tracking-wider">
                                             DICOM

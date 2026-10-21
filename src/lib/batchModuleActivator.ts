@@ -1,3 +1,4 @@
+import { runConcurrent } from "./concurrentTasks";
 import {
   applyScorecardGovernanceToFigurePack,
   buildAtlasDirectivesFromScorecard,
@@ -384,7 +385,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
         // Unlock diferencial / infografía as soon as category is known (suites can continue)
         releaseScorecardGate(scorecardBridge);
 
-        if (modules.atlas3d) {
+        const suiteJobs: Array<() => Promise<void>> = [];
+
+        if (modules.atlas3d) suiteJobs.push(async () => {
           try {
             const panelAssignments = buildAtlasPanelFindingAssignments(scorecardForModules);
             // With per-panel assignments, skip global Scorecard blob to avoid dominant-lesion bias.
@@ -417,9 +420,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (atlasErr) {
             console.error("Error al generar Atlas 3D en lote:", atlasErr);
           }
-        }
+        });
 
-        if (modules.vascular3d) {
+        if (modules.vascular3d) suiteJobs.push(async () => {
           try {
             const vascularDirectives = buildVascularDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-vascular", {
@@ -439,9 +442,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch vascular 3d:", e);
           }
-        }
+        });
 
-        if (modules.thyroid3d) {
+        if (modules.thyroid3d) suiteJobs.push(async () => {
           try {
             const thyroidDirectives = buildThyroidDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-thyroid", {
@@ -463,9 +466,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch thyroid 3d:", e);
           }
-        }
+        });
 
-        if (modules.breast3d) {
+        if (modules.breast3d) suiteJobs.push(async () => {
           try {
             const breastDirectives = buildBreastDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-breast", {
@@ -487,9 +490,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch breast 3d:", e);
           }
-        }
+        });
 
-        if (modules.shoulder3d) {
+        if (modules.shoulder3d) suiteJobs.push(async () => {
           try {
             const radarForShoulder = biomechanicalRadarData
               ? {
@@ -520,9 +523,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch shoulder 3d:", e);
           }
-        }
+        });
 
-        if (modules.knee3d) {
+        if (modules.knee3d) suiteJobs.push(async () => {
           try {
             const radarForKnee = biomechanicalRadarData
               ? {
@@ -553,9 +556,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch knee 3d:", e);
           }
-        }
+        });
 
-        if (modules.ankle3d) {
+        if (modules.ankle3d) suiteJobs.push(async () => {
           try {
             const radarForAnkle = biomechanicalRadarData
               ? {
@@ -586,9 +589,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch ankle 3d:", e);
           }
-        }
+        });
 
-        if (modules.kidney3d) {
+        if (modules.kidney3d) suiteJobs.push(async () => {
           try {
             const radarForKidney = biomechanicalRadarData
               ? {
@@ -619,9 +622,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch kidney 3d:", e);
           }
-        }
+        });
 
-        if (modules.abdomen3d) {
+        if (modules.abdomen3d) suiteJobs.push(async () => {
           try {
             const radarForAbdomen = biomechanicalRadarData
               ? {
@@ -652,9 +655,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch abdomen 3d:", e);
           }
-        }
+        });
 
-        if (modules.abdominalWall3d) {
+        if (modules.abdominalWall3d) suiteJobs.push(async () => {
           try {
             const radarForWall = biomechanicalRadarData
               ? {
@@ -685,9 +688,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch abdominal wall 3d:", e);
           }
-        }
+        });
 
-        if (modules.scrotum3d) {
+        if (modules.scrotum3d) suiteJobs.push(async () => {
           try {
             const radarForScrotum = biomechanicalRadarData
               ? {
@@ -718,9 +721,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch scrotum 3d:", e);
           }
-        }
+        });
 
-        if (modules.muscleTendon3d) {
+        if (modules.muscleTendon3d) suiteJobs.push(async () => {
           try {
             const radarForMuscleTendon = biomechanicalRadarData
               ? {
@@ -751,9 +754,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch muscle-tendon 3d:", e);
           }
-        }
+        });
 
-        if (modules.wrist3d) {
+        if (modules.wrist3d) suiteJobs.push(async () => {
           try {
             const radarForWrist = biomechanicalRadarData
               ? {
@@ -784,7 +787,10 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch wrist 3d:", e);
           }
-        }
+        });
+
+        // Independent suites share the scorecard, then run two at a time.
+        await runConcurrent(suiteJobs, 2);
 
       })());
     } else {

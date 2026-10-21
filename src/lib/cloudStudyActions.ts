@@ -146,6 +146,11 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
       // Merge the authenticated user's Firestore studies. Local copies win
       // when they contain richer browser-only data such as source images.
       // Tombstoned IDs are skipped and removed from the cloud so they stay gone.
+      // Show the local archive immediately; a slow/offline cloud must not hide it.
+      d.setCloudStudies([...studies].sort((a, b) =>
+        new Date(b.createdAt || b.timestamp || 0).getTime() -
+        new Date(a.createdAt || a.timestamp || 0).getTime()
+      ));
       if (uid && uid !== "local") {
         try {
           const remoteStudies = await getStudiesFromCloud(uid);
