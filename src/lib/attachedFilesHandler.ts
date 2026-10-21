@@ -1,5 +1,6 @@
 import { decodeDicomForDisplay, compressImageForAttachment } from "./dicomHelpers";
 import JSZip from "jszip";
+import { runConcurrent } from "./concurrentTasks";
 
 export type AttachedFilesHandlerDeps = {
   detectImageMetaFromFilename: any;
@@ -32,7 +33,7 @@ export function createAttachedFilesHandler(d: AttachedFilesHandlerDeps) {
       side?: "Derecha" | "Izquierda" | "Bilateral";
     }[] = [];
     
-    const promises = filesArray.map((file) => {
+    const jobs = filesArray.map((file) => async () => {
       if (file.size === 0) return Promise.resolve();
       
       const nameLower = file.name.toLowerCase();
@@ -54,13 +55,14 @@ export function createAttachedFilesHandler(d: AttachedFilesHandlerDeps) {
       
       return new Promise<void>((resolve) => {
         const reader = new FileReader();
+        reader.onerror = reader.onabort = () => resolve();
         
         if (isZip) {
           (async () => {
             try {
               const jszip = new JSZip();
               const zipContent = await jszip.loadAsync(file);
-              const zipPromises: Promise<void>[] = [];
+              const zipJobs: Array<() => Promise<void>> = [];
               
               const localUint8ToBase64 = (arr: Uint8Array): string => {
                 let binary = "";
@@ -91,7 +93,7 @@ export function createAttachedFilesHandler(d: AttachedFilesHandlerDeps) {
                 const isInnerImage = ["png", "jpg", "jpeg", "webp", "gif"].includes(innerExt);
                 const isInnerDicomExt = ["dcm", "dicom"].includes(innerExt);
                 
-                const p = (async () => {
+                const p = async () => {
                   const u8Array = await (fileObj as any).async("uint8array");
                   if (u8Array.length === 0) return;
                   
@@ -146,10 +148,13 @@ export function createAttachedFilesHandler(d: AttachedFilesHandlerDeps) {
                       console.error("Error decoding inner ZIP DICOM:", err);
                     }
                   }
-                })();
-                zipPromises.push(p);
+                };
+                zipJobs.push(p);
               }
-              await Promise.all(zipPromises);
+              const results = await runConcurrent(zipJobs, 2);
+              results.forEach((result) => {
+                if (result.status === "rejected") console.error("Error loading ZIP image:", result.reason);
+              });
             } catch (zipErr) {
               console.error("Error unpacking ZIP attachment:", zipErr);
             } finally {
@@ -175,6 +180,9 @@ export function createAttachedFilesHandler(d: AttachedFilesHandlerDeps) {
                   projection: meta.projection,
                   side: meta.side
                 });
+                resolve();
+              }).catch((error) => {
+                console.error("Error loading attached image:", error);
                 resolve();
               });
             } else {
@@ -216,7 +224,10 @@ export function createAttachedFilesHandler(d: AttachedFilesHandlerDeps) {
                     side: appMeta.side
                   });
                   resolve();
-                })();
+                })().catch((error) => {
+                  console.error("Error loading attached DICOM:", error);
+                  resolve();
+                });
               } else {
                 resolve();
               }
@@ -231,7 +242,10 @@ export function createAttachedFilesHandler(d: AttachedFilesHandlerDeps) {
       });
     });
     
-    await Promise.all(promises);
+    const results = await runConcurrent(jobs, 2);
+    results.forEach((result) => {
+      if (result.status === "rejected") console.error("Error loading attached file:", result.reason);
+    });
     
     if (loaded.length > 0) {
       setAttachedImages((prev) => [...prev, ...loaded]);

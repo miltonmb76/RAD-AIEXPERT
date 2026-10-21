@@ -334,7 +334,8 @@ function openAnnexDb(): Promise<IDBDatabase> {
       reject(new Error("IndexedDB not supported"));
       return;
     }
-    const req = idb.open(ANNEX_DB, ANNEX_DB_VERSION);    req.onupgradeneeded = () => {
+    const req = idb.open(ANNEX_DB, ANNEX_DB_VERSION);
+    req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(ANNEX_STORE)) {
         db.createObjectStore(ANNEX_STORE, { keyPath: "id" });
@@ -343,6 +344,25 @@ function openAnnexDb(): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error || new Error("IDB open failed"));
   });
+}
+
+/** Finish each transaction before releasing its connection, including failed saves. */
+async function runAnnexRequest<T>(
+  mode: IDBTransactionMode,
+  operation: (store: IDBObjectStore) => IDBRequest<T>
+): Promise<T> {
+  const db = await openAnnexDb();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const tx = db.transaction(ANNEX_STORE, mode);
+      const request = operation(tx.objectStore(ANNEX_STORE));
+      tx.oncomplete = () => resolve(request.result);
+      tx.onerror = () => reject(tx.error || request.error || new Error("Annex transaction failed"));
+      tx.onabort = () => reject(tx.error || new Error("Annex transaction aborted"));
+    });
+  } finally {
+    db.close();
+  }
 }
 
 /** Drop oversized elastography bitmaps before IDB put (prevents UI freeze on open). */
@@ -374,13 +394,7 @@ export async function saveActiveSessionAnnexBundle(
     reportFingerprint: safe.reportFingerprint || "",
   };
   try {
-    const db = await openAnnexDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(ANNEX_STORE, "readwrite");
-      tx.objectStore(ANNEX_STORE).put(payload);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await runAnnexRequest("readwrite", (store) => store.put(payload));
     // Mark light draft so recovery UI knows annexes exist
     const light = loadActiveSessionDraft();
     if (light) {
@@ -399,18 +413,12 @@ export async function saveActiveSessionAnnexBundle(
         elastographyOriginalImage: null,
       };
       if (!annexBundleHasContent(slim)) return false;
-      const db = await openAnnexDb();
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(ANNEX_STORE, "readwrite");
-        tx.objectStore(ANNEX_STORE).put({
-          id: ANNEX_KEY,
-          v: 1,
-          savedAt: new Date().toISOString(),
-          ...slim,
-        });
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
+      await runAnnexRequest("readwrite", (store) => store.put({
+        id: ANNEX_KEY,
+        v: 1,
+        savedAt: new Date().toISOString(),
+        ...slim,
+      }));
       return true;
     } catch (err2) {
       console.warn("Reintento slim de anexos también falló:", err2);
@@ -423,13 +431,7 @@ export async function loadActiveSessionAnnexBundle(
   expectedFingerprint?: string
 ): Promise<ActiveSessionAnnexBundle | null> {
   try {
-    const db = await openAnnexDb();
-    const row = await new Promise<any>((resolve) => {
-      const tx = db.transaction(ANNEX_STORE, "readonly");
-      const req = tx.objectStore(ANNEX_STORE).get(ANNEX_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    });
+    const row = await runAnnexRequest("readonly", (store) => store.get(ANNEX_KEY));
     if (!row || row.v !== 1) return null;
     if (
       expectedFingerprint &&
@@ -449,13 +451,7 @@ export async function loadActiveSessionAnnexBundle(
 export async function clearActiveSessionAnnexBundle(): Promise<void> {
   lastAnnexPayload = null;
   try {
-    const db = await openAnnexDb();
-    await new Promise<void>((resolve) => {
-      const tx = db.transaction(ANNEX_STORE, "readwrite");
-      tx.objectStore(ANNEX_STORE).delete(ANNEX_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    });
+    await runAnnexRequest("readwrite", (store) => store.delete(ANNEX_KEY));
   } catch {
     /* ignore */
   }

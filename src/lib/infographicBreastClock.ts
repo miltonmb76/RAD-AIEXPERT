@@ -107,20 +107,67 @@ export function extractBreastClockHour(
   return null;
 }
 
+/** Collect distinct clinical hours without treating dimensions (e.g. 10 mm) as clock positions. */
+export function extractBreastClockHours(...parts: Array<string | undefined | null>): number[] {
+  const hours = new Set<number>();
+  const token = "(?:1[0-2]|[1-9]|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)";
+  const pattern = new RegExp(
+    `\\b(?:eje\\s+(?:de\\s+)?(?:las?\\s+)?${token}|(?:a|en|de)\\s+las\\s+${token}|hora\\s*[:\\-]?\\s*${token}|radio\\s*(?:de\\s+las?\\s+)?${token}|${token}\\s*h(?:oras?)?|${token}\\s*o['’]?clock)\\b`,
+    "gi"
+  );
+  for (const part of parts) {
+    for (const match of normalize(String(part || "")).matchAll(pattern)) {
+      const hour = extractBreastClockHourFromText(match[0]) ??
+        (/o['’]?clock/.test(match[0]) ? Number(match[0].match(/\d+/)?.[0]) : null);
+      if (hour != null && hour >= 1 && hour <= 12) hours.add(hour);
+    }
+  }
+  return [...hours];
+}
+
+/** Keep documented hours attached to their breast, including section headings. */
+export function extractBreastClockTargets(text: string): Array<{ side: "left" | "right"; hour: number }> {
+  const targets: Array<{ side: "left" | "right"; hour: number }> = [];
+  let currentSide: "left" | "right" | null = null;
+  for (const sentence of normalize(text).split(/\n|;|\.\s+/)) {
+    const markers = [...sentence.matchAll(/\bmama\s+(derecha|izquierda)\b|\b(right|left)\s+breast\b/g)];
+    if (markers.length > 1) {
+      // Multiple sides in one sentence: require the side before each clock.
+      currentSide = null;
+      for (let i = 0; i < markers.length; i++) {
+        const marker = markers[i];
+        const side = /derecha|right/.test(marker[0]) ? "right" : "left";
+        const segment = sentence.slice(marker.index, markers[i + 1]?.index ?? sentence.length);
+        for (const hour of extractBreastClockHours(segment)) targets.push({ side, hour });
+      }
+      continue;
+    }
+    if (markers.length === 1) currentSide = /derecha|right/.test(markers[0][0]) ? "right" : "left";
+    if (currentSide) {
+      for (const hour of extractBreastClockHours(sentence)) targets.push({ side: currentSide, hour });
+    }
+  }
+  return targets.filter((target, index) => targets.findIndex((other) => other.side === target.side && other.hour === target.hour) === index);
+}
+
 export function detectBreastClockSide(
   ...parts: Array<string | undefined | null>
 ): BreastClockSide {
-  const lat = normalize(parts.filter(Boolean).join(" "));
-  const isRight =
-    (/mama\s*derech|breast\s*right|right\s*breast|\bderech/.test(lat) ||
-      /\bright\b/.test(lat)) &&
-    !/izquier|left|bilateral|ambos/.test(lat);
-  const isLeft =
-    (/mama\s*izquier|breast\s*left|left\s*breast|\bizquier/.test(lat) ||
-      /\bleft\b/.test(lat)) &&
-    !/derech|right|bilateral|ambos/.test(lat);
-  if (isLeft) return "left";
-  if (isRight) return "right";
+  // Explicit fields/directives precede the complete report, which may mention
+  // the normal contralateral breast as well as the target lesion.
+  for (const part of parts) {
+    const lat = normalize(String(part || ""));
+    const isRight =
+      (/mama\s*derech|breast\s*right|right\s*breast|\bderech/.test(lat) ||
+        /\bright\b/.test(lat)) &&
+      !/izquier|left|bilateral|ambos/.test(lat);
+    const isLeft =
+      (/mama\s*izquier|breast\s*left|left\s*breast|\bizquier/.test(lat) ||
+        /\bleft\b/.test(lat)) &&
+      !/derech|right|bilateral|ambos/.test(lat);
+    if (isLeft) return "left";
+    if (isRight) return "right";
+  }
   return "unknown";
 }
 
@@ -254,7 +301,8 @@ export function buildInfographicBreastClockBrief(args: {
     args.correctionNotes,
     String(args.report || "").slice(0, 2500)
   );
-  const hour = extractBreastClockHour(
+  const clinicalHours = extractBreastClockHours(args.correctionNotes, args.diagnosisAnchor, args.topic, args.report);
+  const hour = clinicalHours.length > 1 ? null : extractBreastClockHour(
     args.correctionNotes,
     args.diagnosisAnchor,
     args.topic,
@@ -280,6 +328,12 @@ export function buildInfographicBreastClockBrief(args: {
     "- NUNCA espejar horas: 10≠2, 1≠11, 4≠8, 5≠7, 3≠9.",
     `- Lateralidad del hallazgo: ${sideEs}.`,
   ];
+
+  if (clinicalHours.length > 1) {
+    for (const target of extractBreastClockTargets(String(args.report || ""))) {
+      lines.push(`- LOCALIZACIÓN DOCUMENTADA: mama ${target.side === "right" ? "DERECHA" : "IZQUIERDA"} del paciente, ${target.hour}h. No trasladar esta hora a la otra mama.`);
+    }
+  }
 
   if (hour != null) {
     const g = getBreastClockGeometry(hour);
@@ -319,7 +373,9 @@ export function buildInfographicBreastClockBrief(args: {
     );
   } else {
     lines.push(
-      "- Si el informe indica un eje/hora (p. ej. «eje 10», «7h»), sitúa la lesión EXACTAMENTE en ese radio del reloj sobre la mama correcta."
+      clinicalHours.length > 1
+        ? "- HAY VARIOS EJES: conserva el lado y la hora propios de CADA lesión. No asignes la primera hora del informe a todas las lesiones ni cambies las otras horas para uniformarlas."
+        : "- Si el informe indica un eje/hora (p. ej. «eje 10», «7h»), sitúa la lesión EXACTAMENTE en ese radio del reloj sobre la mama correcta."
     );
   }
 

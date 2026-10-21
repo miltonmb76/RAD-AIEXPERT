@@ -1,3 +1,4 @@
+import { runConcurrent } from "./concurrentTasks";
 import {
   applyScorecardGovernanceToFigurePack,
   buildAtlasDirectivesFromScorecard,
@@ -30,6 +31,7 @@ export type BatchModuleActivatorDeps = {
   isEditingReportManual: boolean;
   modelFor: (task?: any) => string;
   patientGender: string;
+  laterality?: string;
   selectedBatchModules: Record<string, boolean>;
   setAbdomen3dData: (...args: any[]) => void;
   setAbdominalWall3dData: (...args: any[]) => void;
@@ -125,6 +127,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       isEditingReportManual,
       modelFor,
       patientGender,
+      laterality,
       selectedBatchModules,
       setAbdomen3dData,
       setAbdominalWall3dData,
@@ -207,6 +210,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
         ? reportOverride.trim()
         : (isEditingReportManual ? editedReportText : (generatedReport || "")).trim();
     const modules = modulesOverride || selectedBatchModules;
+    const studyLaterality = typeof laterality === "string" ? laterality.trim() : "";
     if (!activeReport) {
       setModifyError("Genera o redacta un reporte antes de activar los modulos en lote.");
       return;
@@ -384,7 +388,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
         // Unlock diferencial / infografía as soon as category is known (suites can continue)
         releaseScorecardGate(scorecardBridge);
 
-        if (modules.atlas3d) {
+        const suiteJobs: Array<() => Promise<void>> = [];
+
+        if (modules.atlas3d) suiteJobs.push(async () => {
           try {
             const panelAssignments = buildAtlasPanelFindingAssignments(scorecardForModules);
             // With per-panel assignments, skip global Scorecard blob to avoid dominant-lesion bias.
@@ -396,8 +402,8 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 organOrStudy: specificStudy || studyType || "",
-                laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
                 requestedModel: modelFor("atlas3d"),
                 customDirectives: scorecardDirectives || undefined,
                 panelAssignments: panelAssignments.length ? panelAssignments : undefined,
@@ -417,9 +423,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (atlasErr) {
             console.error("Error al generar Atlas 3D en lote:", atlasErr);
           }
-        }
+        });
 
-        if (modules.vascular3d) {
+        if (modules.vascular3d) suiteJobs.push(async () => {
           try {
             const vascularDirectives = buildVascularDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-vascular", {
@@ -427,6 +433,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 requestedModel: modelFor("vascular3d"),
                 customDirectives: vascularDirectives || undefined
               })
@@ -439,9 +446,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch vascular 3d:", e);
           }
-        }
+        });
 
-        if (modules.thyroid3d) {
+        if (modules.thyroid3d) suiteJobs.push(async () => {
           try {
             const thyroidDirectives = buildThyroidDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-thyroid", {
@@ -449,6 +456,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 thyroidType: "general_thyroid",
                 requestedModel: modelFor("thyroid3d"),
                 customDirectives: thyroidDirectives || undefined
@@ -463,9 +471,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch thyroid 3d:", e);
           }
-        }
+        });
 
-        if (modules.breast3d) {
+        if (modules.breast3d) suiteJobs.push(async () => {
           try {
             const breastDirectives = buildBreastDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-breast", {
@@ -473,6 +481,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 breastType: "general_breast",
                 requestedModel: modelFor("breast3d"),
                 customDirectives: breastDirectives || undefined
@@ -487,9 +496,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch breast 3d:", e);
           }
-        }
+        });
 
-        if (modules.shoulder3d) {
+        if (modules.shoulder3d) suiteJobs.push(async () => {
           try {
             const radarForShoulder = biomechanicalRadarData
               ? {
@@ -506,6 +515,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 shoulderType: "hombro_manguito",
                 requestedModel: modelFor("shoulder3d"),
                 customDirectives: shoulderDirectives || undefined
@@ -520,9 +530,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch shoulder 3d:", e);
           }
-        }
+        });
 
-        if (modules.knee3d) {
+        if (modules.knee3d) suiteJobs.push(async () => {
           try {
             const radarForKnee = biomechanicalRadarData
               ? {
@@ -539,6 +549,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 kneeType: "rodilla_ligamentos",
                 requestedModel: modelFor("knee3d"),
                 customDirectives: kneeDirectives || undefined
@@ -553,9 +564,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch knee 3d:", e);
           }
-        }
+        });
 
-        if (modules.ankle3d) {
+        if (modules.ankle3d) suiteJobs.push(async () => {
           try {
             const radarForAnkle = biomechanicalRadarData
               ? {
@@ -572,6 +583,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 ankleType: "tobillo_ligamentos",
                 requestedModel: modelFor("ankle3d"),
                 customDirectives: ankleDirectives || undefined
@@ -586,9 +598,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch ankle 3d:", e);
           }
-        }
+        });
 
-        if (modules.kidney3d) {
+        if (modules.kidney3d) suiteJobs.push(async () => {
           try {
             const radarForKidney = biomechanicalRadarData
               ? {
@@ -605,6 +617,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 kidneyType: "renal_b_mode",
                 requestedModel: modelFor("kidney3d"),
                 customDirectives: kidneyDirectives || undefined
@@ -619,9 +632,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch kidney 3d:", e);
           }
-        }
+        });
 
-        if (modules.abdomen3d) {
+        if (modules.abdomen3d) suiteJobs.push(async () => {
           try {
             const radarForAbdomen = biomechanicalRadarData
               ? {
@@ -638,6 +651,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 abdomenType: "abdomen_completo",
                 requestedModel: modelFor("abdomen3d"),
                 customDirectives: abdomenDirectives || undefined
@@ -652,9 +666,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch abdomen 3d:", e);
           }
-        }
+        });
 
-        if (modules.abdominalWall3d) {
+        if (modules.abdominalWall3d) suiteJobs.push(async () => {
           try {
             const radarForWall = biomechanicalRadarData
               ? {
@@ -671,6 +685,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 abdominalWallType: "general_pared_abdominal",
                 requestedModel: modelFor("abdominalWall3d"),
                 customDirectives: wallDirectives || undefined
@@ -685,9 +700,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch abdominal wall 3d:", e);
           }
-        }
+        });
 
-        if (modules.scrotum3d) {
+        if (modules.scrotum3d) suiteJobs.push(async () => {
           try {
             const radarForScrotum = biomechanicalRadarData
               ? {
@@ -704,6 +719,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 scrotumType: "general_scrotum",
                 requestedModel: modelFor("scrotum3d"),
                 customDirectives: scrotumDirectives || undefined
@@ -718,9 +734,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch scrotum 3d:", e);
           }
-        }
+        });
 
-        if (modules.muscleTendon3d) {
+        if (modules.muscleTendon3d) suiteJobs.push(async () => {
           try {
             const radarForMuscleTendon = biomechanicalRadarData
               ? {
@@ -737,6 +753,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 muscleTendonType: "general_musculo_tendon",
                 requestedModel: modelFor("muscleTendon3d"),
                 customDirectives: muscleTendonDirectives || undefined
@@ -751,9 +768,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch muscle-tendon 3d:", e);
           }
-        }
+        });
 
-        if (modules.wrist3d) {
+        if (modules.wrist3d) suiteJobs.push(async () => {
           try {
             const radarForWrist = biomechanicalRadarData
               ? {
@@ -770,6 +787,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 wristType: "general_muneca",
                 requestedModel: modelFor("wrist3d"),
                 customDirectives: wristDirectives || undefined
@@ -784,7 +802,10 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           } catch (e) {
             console.error("Error en batch wrist 3d:", e);
           }
-        }
+        });
+
+        // Independent suites share the scorecard, then run two at a time.
+        await runConcurrent(suiteJobs, 2);
 
       })());
     } else {
