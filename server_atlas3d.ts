@@ -2,6 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { resolveFocalPlanePair } from "./src/lib/focalPlanePair";
+import { extractJsonObject } from "./src/lib/reasoningChain";
+import { ensureBreastSuiteFichaFields } from "./src/lib/breastSuiteFicha";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -5463,8 +5465,8 @@ RESPONDE EN JSON:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
-      const breastPrompt = `Eres un Radiólogo experto en ecografía tiroidea y cuello, especialista ACR BI-RADS y director de arte médico 3D cervical.
-Tu misión es analizar el informe de ecografía de mama/cuello adjunto para estructurar la "SUITE MAMA 3D & FICHA BI-RADS" con máxima fidelidad anatomopatológica y tiroidea.
+      const breastPrompt = `Eres un Radiólogo experto en ecografía mamaria, especialista ACR BI-RADS y director de arte médico 3D mamario.
+Tu misión es analizar el informe de ecografía de mama adjunto para estructurar la "SUITE MAMA 3D & FICHA BI-RADS" con máxima fidelidad anatomopatológica.
 
 ========================================================================
 INFORMACIÓN DEL ESTUDIO MAMARIO:
@@ -5487,74 +5489,44 @@ Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clí
 - NUNCA intercambiar composición y tamaño en la tabla.
 
 ========================================================================
-DIRECTIVAS CLÍNICAS Y TIPOS DE ESTUDIO:
+TIPOS DE ESTUDIO MAMARIO:
 ========================================================================
-Clasifica el estudio en uno de los 5 tipos canónicos y genera la tabla tiroidea correspondiente:
-1. "mama_b_mode": Doppler Carotídeo y Vertebral (ACC, Bulbo, ACI proximal/media, ACE, Arteria Vertebral V1/V2 bilateral o unilateral).
-   - Encabezados: LOCALIZACIÓN | COMPOSICIÓN | TAMAÑO | ECOGENICIDAD | MÁRGENES | IMPACTO
-2. "mama_doppler": Doppler Arterial de Miembros Inferiores (AFC, AFP, AFS proximal/media/distal, A. Poplítea, ATA, ATP, A. Peronea, Pedial).
-   - Encabezados: LOCALIZACIÓN | PLACA / MORFOLOGÍA | TAMAÑO | ONDA / PSV (cm/s) | REL. VELOCIDAD (VR) | IMPACTO
-3. "mama_nodos": Doppler Venoso de Miembros Inferiores (VFC, VF, VFP, V. Poplítea, V. Tibiales, Safena Mayor, Safena Menor).
-   - Encabezados: SEGMENTO VENOSO | COMPRESIBILIDAD / TROMBO | FLUJO ESPONTÁNEO / FÁSICO | MANIOBRA DE AUMENTO | REFLUJO / COMPETENCIA | ESTADO CLÍNICO
-4. "general_breast": Doppler de Arterias Renales (Aorta Abdominal, A. Renal Principal Derecha/Izquierda ostium/cuerpo/hilio, Ramas Interlobares).
-   - Encabezados: LOCALIZACIÓN EVALUADO | PLACA / HALLAZGO LUMINAL | PSV (cm/s) / EDV | ÍNDICE RENOAÓRTICO (RAR) | ÍNDICE DE RESISTIVIDAD (RI) | INTERPRETACIÓN
-5. "general_breast": Doppler Aorto-Ilíaco (Aorta Suprarrenal, Infrarrenal, Bifurcación, A. Ilíaca Común Derecha/Izquierda, Ilíaca Externa/Interna).
-   - Encabezados: SEGMENTO VASCULAR | PLACA / CALCIFICACIÓN / TROMBO | DIÁMETRO / ECTASIA / ANEURISMA | TAMAÑO | PSV (cm/s) / PATRÓN | IMPACTO
+Clasifica en uno de:
+1. "mama_b_mode" — mama B-mode / nódulos
+2. "mama_doppler" — mama + Doppler / vascularidad lesional
+3. "mama_axilas" — mama + axilas / drenaje ganglionar
+4. "general_breast" — detectar del informe
 
 ========================================================================
-DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
+PANELES 3D MAMARIOS (2 o 3):
 ========================================================================
-- Panel A: Vaso o bifurcación principal con la lesión más significativa (ej: Bulbo Carotídeo con placa mixta Gray-Weale Tipo II y reducción luminal, o AFS con estenosis/oclusión, o Vaso con trombo endoluminal).
-- Panel B: Vaso contralateral o segmento complementario (ej: Eje carotídeo contralateral o lecho distal).
-- Panel C (opcional, si el estudio involucra patología bilateral compleja o tercer territorio crítico).
-- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
-  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral|Línea media) = lado ANATÓMICO DEL PACIENTE.
-  - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
-  - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla (ej. "Patient RIGHT carotid bifurcation on VIEWER'S LEFT of frame (AP convention); viewer-right = contralateral/left side landmarks...").
-  - NUNCA intercambiar lados entre paneles ni espejar por estética. Si hay contralateral sano, márcalo explícitamente como el lado opuesto correcto.
-  - doNotInvent implícito: mirrored laterality, side swap, patient-right on viewer-right in AP, inventing contralateral disease.
-- PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical breast gland cross-section render of [PATIENT SIDE + detailed location name], exact wall layer cutaway, exact breast nodule morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy."
+- Panel A: ambas mamas vista frontal con pezones y cuadrantes/reloj (panelRole "both_breasts"), O si el informe es unilateral focal, overview de la mama afectada.
+- Panel B: corte macro de la lesión dominante (panelRole "lesion") — anatomicalFocus 3–5 líneas clínicas (NO vacío).
+- Panel C (opcional): axila ipsilateral / ganglios (panelRole "axilla") — anatomicalFocus 3–5 líneas (NO vacío).
+- Cada panel DEBE tener panelTitle y anatomicalFocus en español, coherentes con su panelLetter (Panel A habla de A, Panel B de B…).
+- LATERALIDAD AP: derecha del paciente = izquierda del cuadro; izquierda del paciente = derecha del cuadro.
+- imagePrompt en inglés, fotorrealismo anatómico femenino, UNLABELED (sin texto/flechas/números en la imagen).
 
 ========================================================================
-SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
+FICHA CLÍNICA MAMARIA — OBLIGATORIA (nunca omitir ni dejar vacía):
 ========================================================================
-Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, consensos (SRU/NASCET/Intersocietal), repercusión tiroidea y permeabilidad.
+DEBES rellenar TODOS estos campos con texto clínico rico en español (mín. 1–2 frases cada uno; keyPoints 3–6 bullets):
+- breastSummary: resumen mamario del estudio
+- morphologyNotes: morfología / lesión dominante
+- axillaryStatus: axilas / drenaje ganglionar (si no hay datos axilares, dilo explícitamente)
+- keyPoints: array de 3–6 puntos clave
+- morphologicalSynthesis: síntesis integradora 3–5 líneas
 
-
-IMPORTANTE MAMA / BI-RADS:
-- Genera 2 o 3 paneles: (A) glándula mama anterior con ambos lóbulos e istmo, (B) nódulo dominante en corte macro, (C opcional) mapa ganglionar cervical.
-- Cada panel incluye panelRole: "gland" | "nodule" | "nodes", clockPositionOrSite, anatomicalFocus detallado (3-5 líneas clínicas).
-- noduleTable filas con: location, size, composition, echogenicity, margins, echogenicFoci, tiradsCategory, clinicalImpact.
-- Incluye breastSummary, morphologyNotes, axillaryStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
-- tableHeaders col1..col8: LOCALIZACIÓN, COMPOSICIÓN, TAMAÑO, ECOGENICIDAD, MÁRGENES, FOCOS ECOGÉNICOS, BI-RADS, IMPACTO.
-- No inventes nódulos ni categorías BI-RADS ausentes del informe/directiva.
-- Prompts de imagen en inglés, fotorrealismo anatómico, sin texto dentro de la imagen, lateralidad AP (derecha del paciente a la izquierda del cuadro).
-
-ADEMÁS DEL JSON PREVIO, DEBE INCLUIR:
-"breastSummary": "...",
-"morphologyNotes": "...",
-"axillaryStatus": "...",
-"keyPoints": ["...", "..."],
-"noduleTable": [ { "location":"...", "size":"...", "composition":"...", "echogenicity":"...", "margins":"...", "echogenicFoci":"...", "tiradsCategory":"TR3", "clinicalImpact":"..." } ],
-paneles con "panelRole" y "clockPositionOrSite".
-
-
-REGLAS ESPECÍFICAS MAMA / BI-RADS:
-- 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) corte macro del nódulo dominante; (C opcional) axila ipsilateral.
-- Contrato de reloj OBLIGATORIO: manos idénticas en ambas mamas; las 3 = derecha del pezón en la imagen (derecha del observador); las 9 = izquierda del pezón. Nunca invertir por estética.
+REGLAS BI-RADS / RELOJ:
 - ${BREAST_CLOCK_PLAN_RULES_ES}
-- clockPositionOrSite y location DEBEN copiar el eje/hora EXACTO del informe/directiva (si dice eje 10 derecho, NUNCA escribir 2h ni espejar).
-- laterality por panel = lado anatómico del paciente (Derecha|Izquierda|Bilateral).
-- lesionTable filas con: location (reloj + distancia al pezón), composition (quística/sólida/mixta), size (mm/cm), shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
-- NUNCA intercambiar composition y size. size solo medidas (ej. "8 × 5 mm"); composition solo morfología (ej. "Quística pura").
-- Incluir breastSummary, morphologyNotes, axillaryStatus, keyPoints[].
+- clockPositionOrSite y location DEBEN copiar el eje/hora EXACTO del informe/directiva.
+- lesionTable: location, composition, size, shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
+- NUNCA intercambiar composition y size.
 - No inventar lesiones ni categorías BI-RADS ausentes del informe/directiva.
-- Prompts de imagen en inglés, fotorrealismo anatómico femenino clínico, sin texto en la imagen.
 
-RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA (incluye SIEMPRE la ficha):
 {
-  "studyTypeCategory": "mama_b_mode" | "mama_doppler" | "mama_nodos" | "general_breast",
+  "studyTypeCategory": "mama_b_mode" | "mama_doppler" | "mama_axilas" | "general_breast",
   "territoryLabel": "ECOGRAFÍA DE MAMAS" | "ECOGRAFÍA MAMA + DOPPLER" | "ECOGRAFÍA MAMA + GANGLIOS",
   "laterality": "Bilateral" | "Derecha" | "Izquierda" | "Línea media",
   "figureTitle": "FIGURA 1. ATLAS 3D MAMARIO Y CORRELACIÓN BI-RADS",
@@ -5583,18 +5555,18 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     {
       "panelLetter": "B",
       "panelTitle": "Panel B: Corte del nódulo dominante",
-      "clockPositionOrSite": "Mama derecha, 3h",
-      "anatomicalFocus": "Lesión dominante con márgenes y composición...",
-      "laterality": "Derecha",
+      "clockPositionOrSite": "Mama izquierda, 3h",
+      "anatomicalFocus": "Lesión dominante con márgenes, composición y medidas...",
+      "laterality": "Izquierda",
       "panelRole": "lesion",
       "imagePrompt": "Ultra-realistic 3D medical breast gland render..."
     }
   ],
   "lesionTable": [
     {
-      "location": "Mama derecha, 3h, 2 cm del pezón",
+      "location": "Mama izquierda, 3h, 2 cm del pezón",
       "composition": "Quística pura",
-      "size": "< 5 mm",
+      "size": "18 x 10 mm",
       "shape": "Oval",
       "margins": "Circunscritos, regulares",
       "echogenicity": "Anecoica con refuerzo posterior",
@@ -5604,8 +5576,12 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "clinicalImpact": "Quiste simple benigno"
     }
   ],
+  "breastSummary": "Resumen mamario en 2–4 frases clínicas...",
+  "morphologyNotes": "Morfología de la lesión dominante...",
+  "axillaryStatus": "Estado de axilas / drenaje...",
+  "keyPoints": ["Punto clave 1", "Punto clave 2", "Punto clave 3"],
   "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
-  "morphologicalSynthesis": "El estudio ecográfico mamario bilateral evidencia..."
+  "morphologicalSynthesis": "El estudio ecográfico mamario evidencia..."
 }`;
 
       const planResponse = await ai.models.generateContent({
@@ -5616,51 +5592,52 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       let planJson: any = {};
       try {
-        planJson = JSON.parse(planResponse.text || "{}");
+        const rawPlan = String(planResponse.text || "");
+        planJson = extractJsonObject(rawPlan) || JSON.parse(rawPlan || "{}");
       } catch (parseErr) {
-        console.error("Error parseando plan JSON Vascular 3D:", parseErr);
+        console.error("Error parseando plan JSON Mama 3D:", parseErr);
         planJson = {
           studyTypeCategory: breastType || "mama_b_mode",
-          territoryLabel: "DOPPLER VASCULAR",
+          territoryLabel: "ECOGRAFÍA DE MAMAS",
           laterality: laterality || "Bilateral",
-          figureTitle: "FIGURA 1. ATLAS 3D DE CORRELACIÓN VASCULAR Y HEMODINÁMICA",
-          tableTitle: "TABLA HEMODINÁMICA Y CARACTERIZACIÓN VASCULAR:",
+          figureTitle: "FIGURA 1. ATLAS 3D MAMARIO Y CORRELACIÓN BI-RADS",
+          tableTitle: "TABLA DE LESIONES Y CATEGORIZACIÓN BI-RADS:",
           tableHeaders: {
             col1: "LOCALIZACIÓN",
             col2: "COMPOSICIÓN",
             col3: "TAMAÑO",
             col4: "ECOGENICIDAD",
-            col5: "REL. / ÍNDICE",
-            col6: "IMPACTO"
+            col5: "MÁRGENES",
+            col6: "ORIENTACIÓN",
+            col7: "VASCULARIDAD",
+            col8: "BI-RADS",
+            col9: "IMPACTO"
           },
           panels: [
             {
               panelLetter: "A",
-              panelTitle: "Panel A: Reconstrucción Vascular de Alta Resolución",
-              anatomicalFocus: "Evaluación morfológica parietal y luminal del eje vascular principal.",
-              laterality: "Derecha",
-              imagePrompt: "Ultra-realistic 3D medical breast gland cross-section render showing blood location wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
+              panelTitle: "Panel A: Ambas mamas — vista frontal",
+              anatomicalFocus: "Parénquima mamario bilateral; localizar la lesión dominante según el informe.",
+              laterality: "Bilateral",
+              panelRole: "both_breasts",
+              imagePrompt: "Ultra-realistic 3D medical bilateral breast frontal render with nipples and clock quadrants, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Eje Complementario / Contralateral",
-              anatomicalFocus: "Permeabilidad y morfología parietal del vaso complementario.",
-              laterality: "Izquierda",
-              imagePrompt: "Ultra-realistic 3D medical breast gland render of contralateral blood location, smooth endothelial intima, clean studio background, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
+              panelTitle: "Panel B: Corte de la lesión dominante",
+              anatomicalFocus: "Corte macro de la lesión dominante descrita en el informe, con composición y márgenes.",
+              laterality: laterality || "Izquierda",
+              panelRole: "lesion",
+              imagePrompt: "Ultra-realistic 3D medical breast gland cross-section of dominant lesion, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
-          lesionTable: [
-            {
-              location: "Eje Vascular Principal",
-              composition: "Morfología evaluada",
-              size: "0%",
-              echogenicity: "Flujo laminar normal",
-              margins: "Normal",
-              clinicalImpact: "Sin repercusión tiroidea"
-            }
-          ],
-          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
-          morphologicalSynthesis: "La correlación anatomopatológica y velocimétrica confirma la permeabilidad y características tiroideas descriptas en el estudio."
+          lesionTable: [],
+          breastSummary: "Suite mamaria generada con datos parciales; completar ficha según el informe.",
+          morphologyNotes: "Ver caracterización de la lesión dominante en el informe y en los paneles.",
+          axillaryStatus: "Axilas no detalladas en el plan parcial; revisar el informe.",
+          keyPoints: ["Revisar localización y categoría BI-RADS en el informe."],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
+          morphologicalSynthesis: "Correlación mamaria según hallazgos del informe ecográfico."
         };
       }
 
@@ -5794,7 +5771,71 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         })
       );
 
-      const finalBreastData = {
+      const lesionTable = (planJson.lesionTable || planJson.noduleTable || []).map((row: any) => {
+        // Evitar invertir composición/tamaño si el modelo los cruza
+        const rawSize = String(row.size || "").trim();
+        const rawComposition = String(row.composition || row.shape || "").trim();
+        const looksLikeSize = (t: string) =>
+          /\d/.test(t) && /(mm|cm|≤|≥|<|>|×|x\s*\d)/i.test(t);
+        const looksLikeComposition = (t: string) =>
+          /(quíst|quist|sólid|solid|mixt|complej|espong|conserv|ganglion|oval|redond|irreg)/i.test(t);
+        let size = rawSize;
+        let composition = rawComposition;
+        if (looksLikeSize(rawComposition) && !looksLikeSize(rawSize)) {
+          size = rawComposition;
+          composition = rawSize || row.shape || "";
+        } else if (
+          looksLikeComposition(rawSize) &&
+          !looksLikeSize(rawSize) &&
+          looksLikeSize(rawComposition)
+        ) {
+          size = rawComposition;
+          composition = rawSize;
+        }
+        let location = String(row.location || "");
+        // If scorecard/report locks a single clock hour, stop the planner from mirroring it in the table
+        if (globalBreastHour != null) {
+          const rowHour = extractBreastClockHour(location);
+          if (rowHour != null && rowHour !== globalBreastHour) {
+            const rowSide = detectBreastSide(location, customDirectives, laterality, planJson.laterality);
+            location = lockBreastClockSiteLabel(
+              rowSide !== "unknown" ? rowSide : globalBreastSide,
+              globalBreastHour,
+              location
+            );
+          }
+        }
+        return {
+          location,
+          size: size || "",
+          composition: composition || row.shape || "",
+          shape: row.shape || composition || "",
+          margins: row.margins || "",
+          echogenicity: row.echogenicity || "",
+          orientation: row.orientation || row.echogenicFoci || "",
+          vascularity: row.vascularity || "",
+          biradsCategory: row.biradsCategory || row.tiradsCategory || "",
+          clinicalImpact: row.clinicalImpact || ""
+        };
+      });
+
+      // Ensure panel captions under images are never blank.
+      const panelsWithFocus = breastPanelsWithImages.map((p: any, idx: number) => {
+        const focus = String(p.anatomicalFocus || "").trim();
+        if (focus) return p;
+        const letter = p.panelLetter || String.fromCharCode(65 + idx);
+        const title = String(p.panelTitle || `Panel ${letter}`).trim();
+        const site = String(p.clockPositionOrSite || "").trim();
+        return {
+          ...p,
+          anatomicalFocus:
+            [title, site, "Correlación mamaria según el informe."]
+              .filter(Boolean)
+              .join(". "),
+        };
+      });
+
+      const finalBreastData = ensureBreastSuiteFichaFields({
         studyTypeCategory: planJson.studyTypeCategory || breastType || "mama_b_mode",
         territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE MAMAS",
         laterality: planJson.laterality || laterality || "Bilateral",
@@ -5811,61 +5852,15 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           col8: "BI-RADS",
           col9: "IMPACTO"
         },
-        panels: breastPanelsWithImages,
-        lesionTable: (planJson.lesionTable || planJson.noduleTable || []).map((row: any) => {
-          // Evitar invertir composición/tamaño si el modelo los cruza
-          const rawSize = String(row.size || "").trim();
-          const rawComposition = String(row.composition || row.shape || "").trim();
-          const looksLikeSize = (t: string) =>
-            /\d/.test(t) && /(mm|cm|≤|≥|<|>|×|x\s*\d)/i.test(t);
-          const looksLikeComposition = (t: string) =>
-            /(quíst|quist|sólid|solid|mixt|complej|espong|conserv|ganglion|oval|redond|irreg)/i.test(t);
-          let size = rawSize;
-          let composition = rawComposition;
-          if (looksLikeSize(rawComposition) && !looksLikeSize(rawSize)) {
-            size = rawComposition;
-            composition = rawSize || row.shape || "";
-          } else if (
-            looksLikeComposition(rawSize) &&
-            !looksLikeSize(rawSize) &&
-            looksLikeSize(rawComposition)
-          ) {
-            size = rawComposition;
-            composition = rawSize;
-          }
-          let location = String(row.location || "");
-          // If scorecard/report locks a single clock hour, stop the planner from mirroring it in the table
-          if (globalBreastHour != null) {
-            const rowHour = extractBreastClockHour(location);
-            if (rowHour != null && rowHour !== globalBreastHour) {
-              const rowSide = detectBreastSide(location, customDirectives, laterality, planJson.laterality);
-              location = lockBreastClockSiteLabel(
-                rowSide !== "unknown" ? rowSide : globalBreastSide,
-                globalBreastHour,
-                location
-              );
-            }
-          }
-          return {
-            location,
-            size: size || "",
-            composition: composition || row.shape || "",
-            shape: row.shape || composition || "",
-            margins: row.margins || "",
-            echogenicity: row.echogenicity || "",
-            orientation: row.orientation || row.echogenicFoci || "",
-            vascularity: row.vascularity || "",
-            biradsCategory: row.biradsCategory || row.tiradsCategory || "",
-            clinicalImpact: row.clinicalImpact || ""
-          };
-        }),
+        panels: panelsWithFocus,
+        lesionTable,
         breastSummary: planJson.breastSummary || "",
         morphologyNotes: planJson.morphologyNotes || "",
         axillaryStatus: planJson.axillaryStatus || "",
         keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
         synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
         morphologicalSynthesis: planJson.morphologicalSynthesis || ""
-      };
+      });
 
       res.json({
         success: true,
