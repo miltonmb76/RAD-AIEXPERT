@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { buildLockedCopyPromptBlock } from "./infographicCopyPlan";
 import {
   buildExtremityLateralityLandmarkBrief,
   buildInfographicLateralityPromptBlock,
   canvasSideForPatientSide,
   extractInfographicLaterality,
+  mergeLateralityIntoCopyPlan,
   type InfographicLateralityExtract,
 } from "./infographicLaterality";
 
@@ -97,4 +99,19 @@ describe("buildInfographicLateralityPromptBlock", () => {
     expect(block).toMatch(/CHECKLIST DE SILUETA/i);
     expect(block).toMatch(/troquíter.*DERECHA del cuadro/i);
   });
+});
+
+
+describe("laterality labels stay separate from printable clinical copy", () => {
+  for (const orientation of ["AP", "PA"] as const) for (const side of ["Derecha", "Izquierda"] as const) {
+    it(`${side} ${orientation}: never locks a drawing instruction into visible text`, () => {
+      const extracted = extractInfographicLaterality({ studyType: "Ecografía de hombro", studyLaterality: side, report: `Hombro ${side}: tendinosis del supraespinoso.` });
+      const merged = mergeLateralityIntoCopyPlan({ title: "Hallazgos del hombro", callouts: [{ label: "Supraespinoso", detail: "Tendinosis documentada" }], mustSpellExactly: [] }, orientation, extracted)!;
+      const locked = buildLockedCopyPromptBlock(merged);
+      expect(locked).not.toMatch(/Dibujar|del cuadro|pantalla/i);
+      expect(locked).toContain("Tendinosis documentada");
+      expect(merged.callouts.find(c => /hombro/i.test(c.label))?.detail).toBeUndefined();
+      expect(merged.title.toLowerCase()).toContain(side === "Derecha" ? "derecho" : "izquierdo");
+    });
+  }
 });

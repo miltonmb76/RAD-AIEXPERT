@@ -5993,9 +5993,9 @@ TIPOS DE ESTUDIO (clasifica en uno):
 ========================================================================
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
-- Panel A (panelRole "overview"): visión anatómica de ambos hombros o del hombro afectado (acromion, clavícula distal, cabeza humeral, deltoides, trayectoria del manguito).
+- Panel A (panelRole "overview"): visión anatómica del hombro del lado documentado (ambos solo si el estudio es explícitamente bilateral) (acromion, clavícula distal, cabeza humeral, deltoides, trayectoria del manguito).
 - Panel B (panelRole "cuff"): corte macro de la patología dominante del manguito (usualmente supraespinoso: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
-- Panel C opcional (panelRole "biceps_bursae" | "ac_joint"): surco bicipital/TCLB + bursa subacromiodeltoidea, O articulación acromioclavicular según el hallazgo dominante.
+- Panel C opcional (panelRole "biceps_bursae" | "ac_joint"): SOLO si el informe documenta un hallazgo adicional en TCLB, bursa o AC. Si no lo documenta, omite este panel; no deduzcas bursitis reactiva por una rotura bursal ni declares normalidad no descrita.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
   - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
@@ -6012,6 +6012,8 @@ TABLA Y FICHA CLÍNICA:
 - tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | GROSOR / GAP | PATRÓN ECO | BURSA | DINÁMICA | SEVERIDAD | IMPACTO
 - Evalúa tendones relevantes presentes en el informe: supraespinoso (SS), infraespinoso (IS), subescapular, TCLB/LHBT; bursa SAD; pinzamiento; AC si aplica.
 - No inventes roturas ausentes. Distingue claramente parcial vs completa.
+- Cada dato de la tabla y de la ficha procede del informe/directiva. Si no se describe grosor, bursa, dinámica, severidad o impacto, escribe "No descrito"; no completes con resultados normales ni recomendaciones. Los valores del esquema indican campos, nunca hallazgos de ejemplo.
+- Para cortes/acercamientos, conserva en el mismo panel una referencia del conjunto del hombro con clavícula medial y húmero lateral visibles; usa una ventana transparente para el detalle, sin perder orientación.
 
 RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 {
@@ -6055,11 +6057,11 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "location": "Hombro del lado documentado, cara anterolateral",
       "structure": "Supraespinoso",
       "thicknessOrGap": "Medida documentada o cadena vacía",
-      "echoPattern": "Tendinosis hipoecoica sin solución de continuidad",
-      "bursalStatus": "Bursa SAD sin distensión significativa",
-      "dynamicFinding": "Pinzamiento leve en arco medio",
-      "severity": "Leve-moderada",
-      "clinicalImpact": "Correlacionar con clínica; rehabilitación dirigida"
+      "echoPattern": "Patrón descrito en el informe o No descrito",
+      "bursalStatus": "Estado descrito en el informe o No descrito",
+      "dynamicFinding": "Dinámica documentada o No descrito",
+      "severity": "Severidad documentada o No descrito",
+      "clinicalImpact": "Impacto explícito en el informe o No descrito"
     }
   ],
   "shoulderSummary": "...",
@@ -6327,9 +6329,9 @@ TIPOS DE ESTUDIO (clasifica en uno):
 ========================================================================
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
-- Panel A (panelRole "overview"): visión anatómica de ambas rodillas o de la rodilla afectado (fémur distal, platillos tibiales, rótula, meniscos, LCM/LCL y mecanismo extensor).
+- Panel A (panelRole "overview"): visión anatómica de la rodilla del lado documentado (ambas solo en estudio explícitamente bilateral) (fémur distal, platillos tibiales, rótula, meniscos, LCM/LCL y mecanismo extensor).
 - Panel B (panelRole "meniscus_ligament"): corte macro de la patología meniscal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir menisco medial por defecto si el informe dice externo/lateral).
-- Panel C opcional (panelRole "extensor_effusion" | "baker_cartilage"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
+- Panel C opcional (panelRole "extensor_effusion" | "baker_cartilage"): SOLO si hay un hallazgo adicional explícito en mecanismo extensor, derrame, quiste de Baker o cartílago. Si no consta, omite el panel; no deduzcas hallazgos asociados.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
   - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
@@ -6346,6 +6348,8 @@ TABLA Y FICHA CLÍNICA:
 - tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | GROSOR / GAP | PATRÓN ECO | DERRAME | DINÁMICA | SEVERIDAD | IMPACTO
 - Evalúa estructuras relevantes: menisco medial(interno/tibial)/lateral(externo/peroné) con cuerno anterior/cuerpo/posterior explícitos, LCM, LCL (peroné), ligamento/tendón patelar, derrame, quiste de Baker, cartílago femorotibial. En cada fila meniscal de findingTable.structure escribe p.ej. "Menisco lateral (peroné), cuerno posterior". No inventes rotura de LCA salvo evidencia explícita en el informe/scorecard.
 - No inventes lesiones ausentes. Distingue claramente parcial vs completo / extrusión / degenerativo.
+- Cada dato de la tabla y ficha debe proceder del informe/directiva. Usa "No descrito" para grosor, derrame, dinámica, severidad o impacto no documentados; no inventes resultados normales ni recomendaciones.
+- Conserva fémur distal, tibia y cabeza del peroné visibles para orientar cada panel. Muestra el cuerno afectado con ventana transparente dentro de la articulación orientada, no con un macro aislado sin referencias.
 
 RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 {
@@ -6368,7 +6372,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     {
       "panelLetter": "A",
       "panelTitle": "Panel A: Anatomía de la rodilla afectado — vista de conjunto",
-      "structureOrSite": "Rodilla derecho — visión general",
+      "structureOrSite": "Rodilla del lado documentado — visión general",
       "anatomicalFocus": "Cóndilos femorales, rótula, platillos tibiales, meniscos y colaterales...",
       "laterality": "Lado documentado en el informe",
       "panelRole": "overview",
@@ -6377,7 +6381,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     {
       "panelLetter": "B",
       "panelTitle": "Panel B: Corte meniscal — según informe (interno/externo + cuerno)",
-      "structureOrSite": "Menisco externo/lateral (peroné), cuerno posterior — EJEMPLO; usar el del informe",
+      "structureOrSite": "Estructura, compartimento y cuerno exactos del informe",
       "anatomicalFocus": "Detalle del menisco indicado (interno=tibial / externo=peroné) y cuerno exacto; NUNCA intercambiar...",
       "laterality": "Lado documentado en el informe",
       "panelRole": "meniscus_ligament",
@@ -6387,13 +6391,13 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
   "findingTable": [
     {
       "location": "Rodilla del lado documentado",
-      "structure": "Menisco externo/lateral (peroné), cuerno posterior — EJEMPLO; copiar del informe",
+      "structure": "Estructura, compartimento y cuerno exactos del informe",
       "thicknessOrGap": "Medida documentada o cadena vacía",
-      "echoPattern": "Rotura/degeneración según informe",
-      "effusionStatus": "Sin derrame articular significativo",
+      "echoPattern": "Patrón documentado o No descrito",
+      "effusionStatus": "Derrame documentado o No descrito",
       "dynamicFinding": "Según informe",
-      "severity": "Leve-moderada",
-      "clinicalImpact": "Correlacionar con clínica; rehabilitación dirigida"
+      "severity": "Severidad documentada o No descrito",
+      "clinicalImpact": "Impacto explícito en el informe o No descrito"
     }
   ],
   "kneeSummary": "...",

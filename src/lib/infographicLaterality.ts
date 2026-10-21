@@ -490,16 +490,9 @@ export function mergeLateralityIntoCopyPlan<T extends {
     const label = `${m.structure} ${sideLabelEs(m.side).toLowerCase()} (del paciente)`;
     pushMust(label);
     if (!callouts.some((c) => c.label.toLowerCase().includes(struct))) {
-      const canvas = canvasSideForPatientSide(orientation, m.side);
-      callouts.unshift({
-        label,
-        detail:
-          canvas === "left_of_frame"
-            ? "Dibujar a la izquierda del cuadro"
-            : canvas === "right_of_frame"
-              ? "Dibujar a la derecha del cuadro"
-              : undefined,
-      });
+      // Callouts are visible clinical copy. Camera/layout instructions belong
+      // only in buildInfographicLateralityPromptBlock, never in locked text.
+      callouts.unshift({ label });
     }
   }
 

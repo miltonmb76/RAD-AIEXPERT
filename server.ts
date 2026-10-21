@@ -1818,7 +1818,7 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       return res.status(400).json({ success: false, error: "Indica si el estudio de hombro o rodilla es derecho, izquierdo o bilateral antes de generar la infografía." });
     }
     const mskContract: MskImageContract | null = mskOrgan && mskSide !== "unspecified"
-      ? { organ: mskOrgan, side: mskSide, view: orientation,
+      ? { organ: mskOrgan, side: mskSide, view: orientation, format: "infographic",
           clinicalSite: [correctionNotes, isDirected ? topicText : "", reportForInfographic].filter(Boolean).join("\n") }
       : null;
     if (mskContract) {

@@ -69,6 +69,7 @@ export type MskImageContract = {
   side: "right" | "left" | "bilateral";
   view: MskView;
   clinicalSite: string;
+  format?: "atlas" | "infographic";
 };
 
 export function buildMskLandmarkBrief(contract: MskImageContract): string {
@@ -84,12 +85,14 @@ export function buildMskLandmarkBrief(contract: MskImageContract): string {
   return `LOCKED MSK ANATOMY: PATIENT ${contract.side.toUpperCase()} ${contract.organ.toUpperCase()}, ${contract.view === "AP" ? "ANTERIOR / AP view" : "POSTERIOR / PA view"}. ${landmarks}
 This is the orientation WITHIN the anatomical close-up, independent of where the panel is placed on the page. Show enough landmarks to establish the side. Preserve the exact documented clinical site: ${contract.clinicalSite || "Use only the report; do not invent a lesion or compartment"}.
 For a unilateral study, illustrate ONLY the locked patient side in every anatomical close-up and inset. Do not add a drawing of the normal contralateral joint; mention it in text only if needed. Full-body orientation silhouettes may show both sides, but highlight only the documented side. Every magnified inset must preserve the locked side and its landmarks.
+COMPOSITION OVERRIDE: these camera and orientation requirements override any earlier request for an isolated macro, lateral camera, extreme zoom or cropped cutaway. Keep the joint's medial AND lateral bony landmarks in the same image. For a tendon/bursa/meniscal detail, use a transparent window or enlarged cutaway connected to this oriented joint; do not crop away the orientation context. A small camera obliquity is acceptable only while the front/back view and both landmark positions remain unambiguous. Preserve the documented lesion size relative to anatomy; do not enlarge a small partial lesion into a large or full-thickness defect.
+CLINICAL SOURCE IS CLOSED: unmentioned structures are anatomical context only, not diagnosed normal or abnormal. Never add reactive bursitis, effusion, biceps findings, dynamic signs, grades or recommendations absent from the source. Only clinical copy intended for the selected audience may be printed; camera/layout/production instructions are never visible text.
 Do not mirror for layout. Do not replace anatomical correction with a different title. Do not print these camera instructions inside the image.`;
 }
 
 export class MskImageValidationError extends Error {
   constructor() {
-    super("No se pudo confirmar el lado y la ubicación anatómica de la imagen. No se incorporó al informe. Revisa el lado seleccionado y vuelve a generar.");
+    super("No se pudo confirmar el lado y la ubicación anatómica de la imagen. No se incorporó al informe. Intenta regenerar con una vista más amplia que muestre las referencias anatómicas.");
     this.name = "MskImageValidationError";
   }
 }
@@ -103,6 +106,8 @@ export function acceptsMskVisualCheck(result: any, contract: MskImageContract): 
       result.panels.every((panel: any) => (panel?.anatomicalSide === "right" || panel?.anatomicalSide === "left") &&
         acceptsMskVisualCheck(panel, { ...contract, side: panel.anatomicalSide }));
   }
+  if (contract.format === "infographic" &&
+      (result?.textMatchesClinicalSource !== true || result?.productionInstructionsAbsent !== true)) return false;
   const lateral = (contract.side === "right") === (contract.view === "AP") ? "left" : "right";
   const medial = lateral === "left" ? "right" : "left";
   return result?.anatomicalSide === contract.side && result?.view === contract.view &&
@@ -118,14 +123,15 @@ export async function generateCheckedMskImage(args: {
   inspect: (imageUrl: string, instruction: string) => Promise<unknown>;
 }): Promise<{ imageUrl: string; lateralityQa: { status: "ai_checked"; attempts: number } }> {
   const brief = buildMskLandmarkBrief(args.contract);
+  let failedChecks: string[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const imageUrl = await args.generate(attempt === 1 ? brief : `${brief}\nCORRECTION: the previous candidate could not establish the required side/site. Regenerate with clear orientation landmarks; do not merely relabel it.`);
+    const imageUrl = await args.generate(attempt === 1 ? brief : `${brief}\nCORRECTION: the previous candidate did not pass these checks: ${failedChecks.join(", ")}. Redraw with the full orientation context and only source-supported clinical copy; do not merely relabel it.`);
     if (!/^data:image\/[\w.+-]+;base64,[A-Za-z0-9+/=]+$/.test(imageUrl)) throw new MskImageValidationError();
     let result: unknown;
     try {
       result = await args.inspect(imageUrl, `Audit the DRAWN ANATOMY, not the title or R/L labels. ${brief}
-If the camera is lateral/oblique or landmarks do not establish the side, return unknown and false. For clinicalSiteMatches inspect the drawn lesion location and internal/external compartment and anterior/body/posterior position, not merely the caption. A regional overview need not show every finding; assess the site actually depicted against the clinical source. Inspect EVERY anatomical close-up/inset, including small comparison illustrations: allPanelsConsistent is false if any inset contradicts its side label, swaps the side/site, or cannot be oriented. Do not approve based only on the largest illustration. Full-body silhouettes are orientation references; check that their highlighted side agrees. Explain evidence for each inset in observations. No diagnosis is requested.
-Return ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment object per anatomical panel]}. Both sides must be assessed separately. Assessment object schema:' : 'JSON with schema:'} {"anatomicalSide":"right|left|unknown","view":"AP|PA|unknown","lateralLandmarkPosition":"left|right|unknown","medialLandmarkPosition":"left|right|unknown","landmarksVisible":boolean,"clinicalSiteMatches":boolean,"allPanelsConsistent":boolean,"observations":["Visible anatomical evidence"]}.`);
+Classify the predominant front/back view as AP/PA. Small obliquity or a cutaway is not itself a failure when both medial/lateral bony landmarks remain clearly visible in their required positions and establish the side. If the drawing is a lateral view, an isolated ambiguous crop, or its landmarks do not establish the side, return unknown and false. For clinicalSiteMatches inspect the drawn lesion location and internal/external compartment and anterior/body/posterior position, not merely the caption. A regional overview need not show every finding; assess the site actually depicted against the clinical source. Inspect EVERY anatomical close-up/inset, including small comparison illustrations: allPanelsConsistent is false if any inset contradicts its side label, swaps the side/site, or cannot be oriented. Do not approve based only on the largest illustration. Full-body silhouettes are orientation references; check that their highlighted side agrees. Explain evidence for each inset in observations. ${args.contract.format === "infographic" ? 'Also read EVERY visible text line against the clinical source: textMatchesClinicalSource=false for any unsupported normal/abnormal finding, altered measurement, or omitted/changed qualifier (including partial vs complete or bursal vs articular). productionInstructionsAbsent=false if any camera/layout/prompt instruction is printed (for example "Dibujar a la derecha del cuadro"). These are checks of source fidelity, not independent diagnosis.' : 'The atlas image must remain unlabeled anatomical CGI. No diagnosis is requested.'}
+Return ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment object per anatomical panel]}. Both sides must be assessed separately. Assessment object schema:' : 'JSON with schema:'} {"anatomicalSide":"right|left|unknown","view":"AP|PA|unknown","lateralLandmarkPosition":"left|right|unknown","medialLandmarkPosition":"left|right|unknown","landmarksVisible":boolean,"clinicalSiteMatches":boolean,"allPanelsConsistent":boolean,${args.contract.format === "infographic" ? '"textMatchesClinicalSource":boolean,"productionInstructionsAbsent":boolean,' : ''}"observations":["Visible anatomical evidence"]}.`);
       if (typeof result === "string") result = extractJsonObject(result);
     } catch {
       // Provider failure is not evidence that an image is correct.
@@ -134,6 +140,15 @@ Return ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment ob
     if (acceptsMskVisualCheck(result, args.contract)) {
       return { imageUrl, lateralityQa: { status: "ai_checked", attempts: attempt } };
     }
+    // Feed back only fixed check names, never model observations or clinical data.
+    const checks = ["anatomicalSide", "view", "lateralLandmarkPosition", "medialLandmarkPosition", "landmarksVisible", "clinicalSiteMatches", "allPanelsConsistent"];
+    if (args.contract.format === "infographic") checks.push("textMatchesClinicalSource", "productionInstructionsAbsent");
+    const expected = { anatomicalSide: args.contract.side, view: args.contract.view,
+      lateralLandmarkPosition: (args.contract.side === "right") === (args.contract.view === "AP") ? "left" : "right",
+      medialLandmarkPosition: (args.contract.side === "right") === (args.contract.view === "AP") ? "right" : "left" };
+    failedChecks = args.contract.side === "bilateral" ? ["independent orientation and source fidelity for each side"] :
+      checks.filter((key) => (result as any)?.[key] !== ((expected as any)[key] ?? true));
+    if (!failedChecks.length) failedChecks = ["visible anatomical evidence for every panel"];
   }
   throw new MskImageValidationError();
 }

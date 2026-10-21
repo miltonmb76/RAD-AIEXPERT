@@ -15,7 +15,7 @@ const observation = (contract, patch = {}) => {
   const lateral = (contract.side === "right") === (contract.view === "AP") ? "left" : "right";
   return { anatomicalSide: contract.side, view: contract.view,
     lateralLandmarkPosition: lateral, medialLandmarkPosition: lateral === "left" ? "right" : "left",
-    landmarksVisible: true, clinicalSiteMatches: true, allPanelsConsistent: true,
+    landmarksVisible: true, clinicalSiteMatches: true, allPanelsConsistent: true, textMatchesClinicalSource: true, productionInstructionsAbsent: true,
     observations: ["Synthetic visible landmark evidence, no patient data"], ...patch };
 };
 
@@ -76,6 +76,47 @@ test("bilateral images require independent valid anatomy for both sides", () => 
   assert.equal(acceptsMskVisualCheck({ panels: [right, left, { anatomicalSide: "unknown" }] }, contract), false);
 });
 
+test("infographics reject leaked production instructions and unsupported clinical text", async () => {
+  const contract = { organ: "shoulder", side: "left", view: "AP", format: "infographic", clinicalSite: "Hombro izquierdo: rotura parcial bursal 6 x 3 mm." };
+  for (const field of ["textMatchesClinicalSource", "productionInstructionsAbsent"]) {
+    assert.equal(acceptsMskVisualCheck(observation(contract, { [field]: false }), contract), false);
+    assert.equal(acceptsMskVisualCheck(observation(contract, { [field]: undefined }), contract), false);
+    let audits = 0; const prompts = [];
+    const result = await generateCheckedMskImage({ contract,
+      generate: async (prompt) => { prompts.push(prompt); return image; },
+      inspect: async (_url, instruction) => {
+        assert.match(instruction, /EVERY visible text line/);
+        assert.match(instruction, /Dibujar a la derecha del cuadro/);
+        return observation(contract, { [field]: ++audits > 1, observations: ["Synthetic sensitive observation must never enter regeneration"] });
+      },
+    });
+    assert.equal(result.lateralityQa.attempts, 2);
+    assert.match(prompts[1], new RegExp(field));
+    assert.doesNotMatch(prompts[1], /Synthetic sensitive observation/);
+  }
+});
+
+test("macro panels retain orientation context without automatically rejecting a clear cutaway", async () => {
+  const contract = { organ: "shoulder", side: "left", view: "AP", clinicalSite: "Synthetic partial bursal tear" };
+  let checked = 0;
+  const result = await generateCheckedMskImage({ contract,
+    generate: async (prompt) => {
+      assert.match(prompt, /COMPOSITION OVERRIDE/);
+      assert.match(prompt, /medial AND lateral bony landmarks/);
+      assert.match(prompt, /transparent window or enlarged cutaway/);
+      return image;
+    },
+    inspect: async (_url, instruction) => {
+      checked++;
+      assert.match(instruction, /Small obliquity or a cutaway is not itself a failure/);
+      return observation(contract);
+    },
+  });
+  assert.equal(checked, 1);
+  assert.equal(result.imageUrl, image);
+  assert.equal(acceptsMskVisualCheck(observation(contract, { lateralLandmarkPosition: "unknown" }), contract), false);
+});
+
 test("repeated visual failures and missing anatomy never leak an image", async () => {
   const contract = { organ: "shoulder", side: "right", view: "AP", clinicalSite: "Synthetic" };
   let generated = 0;
@@ -120,6 +161,7 @@ test("real shoulder/knee generate and regenerate routes use clinical side and vi
         builder.onLoad({ filter: /./, namespace: "synthetic" }, (args) => ({ contents:
           args.path === "@google/genai" ? `export class GoogleGenAI { models = { generateContent: async (request) => {
             const s = globalThis.__mskFixture;
+            (s.requests ??= []).push(request);
             if (request.config?.imageConfig) { s.images++; return { candidates: [{ content: { parts: [{ inlineData: { data: 'U1lOVEhFVElD' } }] } }] }; }
             if (request.contents?.parts?.some(p => p.inlineData)) { s.audits++; return { text: JSON.stringify(s.audit) }; }
             s.plans++; return { text: JSON.stringify(s.plan) };
@@ -155,6 +197,10 @@ test("real shoulder/knee generate and regenerate routes use clinical side and vi
       assert.equal(generated.result.data.panels[0].laterality, "Izquierda");
       assert.equal(generated.result.data.panels[0].imageUrl, image);
       assert.equal(globalThis.__mskFixture.audits, 1);
+      const planningText = globalThis.__mskFixture.requests.find(r => !r.config?.imageConfig && !r.contents?.parts?.some(p => p.inlineData)).contents[0].text;
+      assert.match(planningText, /SOLO si/);
+      assert.doesNotMatch(planningText, /rehabilitación dirigida|Pinzamiento leve en arco medio/);
+      if (organ === "knee") assert.doesNotMatch(planningText, /surco bicipital|Rodilla derecho/);
       // With "auto", regeneration must keep the panel's side even without a sided report.
       globalThis.__mskFixture.plan = { panelTitle: title, imagePrompt: "Anterior view of synthetic anatomy" };
       const regenerated = await run(`/api/regenerate-3d-${organ}-panel`, { panel, laterality: "auto", reportText: "Hallazgos sintéticos" });
@@ -209,7 +255,7 @@ test("actual infographic route checks patient/clinician images and blocks failed
       if (request.contents?.parts?.some((part) => part.inlineData)) {
         fixture.audits++; return { text: JSON.stringify(fixture.check) };
       }
-      return { text: JSON.stringify({ title: "Synthetic clinical title", sections: [] }) };
+      return { text: JSON.stringify({ title: "Synthetic clinical title", callouts: [{ label: "Hallazgo", detail: "Informe sintético del estudio izquierdo" }], mustSpellExactly: [] }) };
     } } } };
     globalThis.__infographicFixture = fixture;
     const run = async (body) => {
@@ -233,6 +279,14 @@ test("actual infographic route checks patient/clinician images and blocks failed
       assert.equal(rejected.result.imageUrl, undefined);
       assert.equal(fixture.images, 2);
       assert.equal(fixture.audits, 2);
+      for (const field of ["textMatchesClinicalSource", "productionInstructionsAbsent"]) {
+        fixture.images = fixture.audits = 0;
+        fixture.check = observation({ organ, side: "left", view: "AP" }, { [field]: false });
+        const badCopy = await run(body);
+        assert.equal(badCopy.result.success, false);
+        assert.equal(badCopy.result.imageUrl, undefined);
+        assert.equal(fixture.images, 2);
+      }
     }
     fixture.check = { panels: [observation({ side: "right", view: "AP" }), observation({ side: "left", view: "AP" })] };
     const bilateral = await run({ studyType: "Rodilla", report: "Rodilla derecha y rodilla izquierda: estudio sintético.", studyLaterality: "Bilateral" });

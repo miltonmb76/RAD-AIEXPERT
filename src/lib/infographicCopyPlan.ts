@@ -159,7 +159,9 @@ Devuelve SOLO un JSON válido con esta forma:
 
 REGLAS:
 - Español impecable: tildes (diagnóstico, médico, vesícula…), ñ, plurales correctos.
-- 3 a 6 callouts. Frases cortas. Sin párrafos.
+- 1 a 6 callouts, solo los necesarios para los hallazgos documentados. Si hay un único hallazgo, usa un único callout; no rellenes con hallazgos adicionales. Frases cortas. Sin párrafos.
+- No afirmes que una estructura es normal o patológica si el reporte no lo dice. No deduzcas bursitis reactiva, derrame, hallazgos del bíceps, pinzamiento ni grados de severidad por asociación.
+- Las instrucciones de cámara, posición en el cuadro, diseño o dibujo nunca forman parte del texto visible.
 - Copia medidas y nombres diagnósticos del informe sin cambiar letras.
 - Si hay lateralidad (derecho/izquierdo/bilateral), INCLÚYELA en el título o en callouts y en mustSpellExactly (p. ej. "hombro derecho", "rodilla izquierda"). Nunca la omitas ni la inviertas.
 - ${reco}
