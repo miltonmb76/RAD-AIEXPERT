@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import sharp from "sharp";
 import { jsPDF } from "jspdf";
 import { mskPosterSource, mskPosterGlossary, mskPosterOrientation, renderMskInfographicPoster, shareMskAnatomy, withMskPosterRenderLimit } from "../src/lib/mskInfographicPoster.ts";
@@ -76,7 +78,7 @@ test("real fonts render both posters as valid PNG and existing PDF image embeddi
     const doc = new jsPDF();
     doc.addImage(imageUrl, "PNG", 10, 10, 190, 190 * meta.height / meta.width);
     assert.ok(doc.output("arraybuffer").byteLength > 1000);
-    await writeFile(`/private/tmp/rad-msk-typeset-${audience}.png`, bytes);
+    await writeFile(path.join(tmpdir(), `rad-msk-typeset-${audience}.png`), bytes);
   }
   await assert.rejects(renderMskInfographicPoster({ anatomyImageUrl: "https://invalid.example/image", report, contract, audience: "patient" }), /formato válido/);
 });

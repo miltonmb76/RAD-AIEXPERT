@@ -3,6 +3,7 @@ build/
 dist/
 server.cjs
 server.cjs.map
+msk-render-smoke.mjs
 coverage/
 .DS_Store
 *.log
