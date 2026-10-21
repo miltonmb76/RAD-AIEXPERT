@@ -35,4 +35,6 @@ npm run lint
 
 Las pruebas de proveedores usan respuestas y claves ficticias: comprueban separación de públicos, destino explícito, cancelación, errores, límite de concurrencia y conservación de Gemini por defecto. No verifican calidad visual real ni acceso a la cuenta OpenAI. Antes de publicar, comprobar ambas imágenes con un caso ficticio y comparar los dos PDF exportados. La revisión visual sigue siendo necesaria para ambos proveedores.
 
+En la comprobación real del 21 de octubre de 2026, GPT Image 1.5 generó las versiones paciente y médico de un caso ficticio de abdomen en unos 42 y 41 segundos, respectivamente. El ensayo mamario ficticio fue rechazado por los filtros de contenido de OpenAI. No se modificaron instrucciones para eludir ese rechazo. La imagen técnica de abdomen mostró errores de texto: la disponibilidad del proveedor no garantiza exactitud clínica, buena ortografía ni equivalencia visual con ChatGPT. Revisar cada candidata antes de elegirla para un PDF.
+
 Documentación de referencia: [generación de imágenes de OpenAI](https://developers.openai.com/api/docs/guides/image-generation).

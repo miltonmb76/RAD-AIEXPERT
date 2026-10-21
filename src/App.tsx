@@ -6269,6 +6269,8 @@ Ejemplo:
     pdfLayoutType,
     includeAnnexIndexInReport,
     infographicUrl,
+    infographicClinicianUrl,
+    attachInfographicToOfficialReport,
     attachInfographicToPatientSummary
   ]);
 
