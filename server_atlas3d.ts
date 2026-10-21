@@ -1602,7 +1602,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
   async function generateMedicalImage(
     ai: any,
     prompt: string,
-    opts?: { referenceImageUrl?: string | null; referenceKind?: "us" | "cgi_sibling" | "msk_correction" }
+    opts?: { referenceImageUrl?: string | null; referenceKind?: "us" | "cgi_sibling" | "msk_correction"; mskChecked?: boolean }
   ): Promise<string> {
     // Central choke-point: every suite / atlas / vascular / focal render gets clean-PNG rules.
     const reinforcedPrompt = reinforceCleanRenderPrompt(prompt);
@@ -1642,6 +1642,12 @@ export function registerAtlas3DRoutes(app: express.Express) {
       const imagePart = response.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data);
       return `data:${imagePart?.inlineData?.mimeType || "image/jpeg"};base64,${base64Image}`;
     };
+
+    // Each checked MSK candidate is exactly one model call. A failed correction
+    // must not start another text render and an Imagen fallback underneath QA.
+    if (opts?.mskChecked) return runFlashImage(ref ? {
+      parts: [{ text: `${refGuide}\n\n${reinforcedPrompt}` }, { inlineData: { mimeType: ref.mime, data: ref.data } }],
+    } : reinforcedPrompt);
 
     // Prefer multimodal reference when available (Bridge US→3D or Focal A→B).
     if (ref) {
@@ -1690,9 +1696,8 @@ export function registerAtlas3DRoutes(app: express.Express) {
     }
     const checked = await generateCheckedMskImage({
       contract: { organ, side, view: detectMskView(prompt), clinicalSite },
-      maxAttempts: 3,
       generate: (feedback, rejectedImage) => generateMedicalImage(ai, `${feedback}\n${prompt}\n${feedback}`,
-        rejectedImage ? { referenceImageUrl: rejectedImage, referenceKind: "msk_correction" } : undefined),
+        { mskChecked: true, ...(rejectedImage ? { referenceImageUrl: rejectedImage, referenceKind: "msk_correction" as const } : {}) }),
       inspect: async (imageUrl, instruction) => {
         const image = stripDataUrl(imageUrl);
         if (!image) throw new Error("Invalid image");

@@ -2079,6 +2079,13 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       ["1:1", "1K"],
     ];
     const renderCandidate = async (feedback = "", rejectedImage?: string) => {
+      // MSK correction already has a strict image budget. Do not multiply it
+      // through four size/ratio fallbacks on a timeout, quota error or rejection.
+      if (mskContract) {
+        const imageUrl = await tryGenerate("3:4", "2K", feedback, rejectedImage);
+        if (imageUrl) return imageUrl;
+        throw new Error("El generador no devolvió una imagen. No se iniciaron más generaciones automáticas.");
+      }
       let lastError: any = null;
       for (const [aspectRatio, imageSize] of attempts) {
         try {
@@ -2094,7 +2101,6 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
     };
     const imageUrl = mskContract ? (await generateCheckedMskImage({
       contract: { ...mskContract, expectedCopy: copyPlan ? buildLockedCopyPromptBlock(copyPlan) : undefined },
-      maxAttempts: 3,
       generate: renderCandidate,
       inspect: async (candidate, instruction) => {
         const match = candidate.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);

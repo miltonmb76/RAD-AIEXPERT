@@ -5055,27 +5055,30 @@ Ejemplo:
         includeRecommendations: "none" as const,
         ...(notes ? { correctionNotes: notes } : {}),
       };
-      const requests: Promise<Response>[] = [];
-      if (doPatient) {
-        requests.push(
-          fetch("/api/generate-infographic", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...baseBody, audience: "patient" }),
-          })
-        );
-      }
-      if (doClinician) {
-        requests.push(
-          fetch("/api/generate-infographic", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...baseBody, audience: "clinician" }),
-          })
-        );
-      }
-      const responses = await Promise.all(requests);
-      const payloads = await Promise.all(responses.map((r) => r.json()));
+      // Publish each checked version as soon as it arrives. One slow or failed
+      // request must not hide the other version that is already available.
+      let firstShown = false;
+      const requestAudience = async (audience: "patient" | "clinician") => {
+        const response = await fetch("/api/generate-infographic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...baseBody, audience }),
+        });
+        const data = await response.json();
+        if (response.ok && data?.success && data?.imageUrl) {
+          if (audience === "patient") setInfographicUrl(data.imageUrl);
+          else setInfographicClinicianUrl(data.imageUrl);
+          if (!firstShown) { firstShown = true; setInfographicAudienceTab(audience); }
+        }
+        return response.ok ? data : { success: false, error: data?.error || "No se pudo generar esta versión." };
+      };
+      const requests: Promise<any>[] = [];
+      if (doPatient) requests.push(requestAudience("patient"));
+      if (doClinician) requests.push(requestAudience("clinician"));
+      const settled = await Promise.allSettled(requests);
+      const payloads = settled.map(result => result.status === "fulfilled" ? result.value : {
+        success: false, error: "Se interrumpió la conexión al generar esta versión.",
+      });
       let patientData: any = null;
       let clinicianData: any = null;
       let pi = 0;
