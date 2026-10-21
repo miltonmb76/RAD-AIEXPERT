@@ -2711,6 +2711,7 @@ Ejemplo:
     isEditingReportManual,
     modelFor,
     patientGender,
+    laterality,
     selectedBatchModules,
     setAbdomen3dData,
     setAbdominalWall3dData,

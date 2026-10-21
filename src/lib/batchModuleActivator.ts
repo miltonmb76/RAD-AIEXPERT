@@ -31,6 +31,7 @@ export type BatchModuleActivatorDeps = {
   isEditingReportManual: boolean;
   modelFor: (task?: any) => string;
   patientGender: string;
+  laterality?: string;
   selectedBatchModules: Record<string, boolean>;
   setAbdomen3dData: (...args: any[]) => void;
   setAbdominalWall3dData: (...args: any[]) => void;
@@ -126,6 +127,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       isEditingReportManual,
       modelFor,
       patientGender,
+      laterality,
       selectedBatchModules,
       setAbdomen3dData,
       setAbdominalWall3dData,
@@ -208,6 +210,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
         ? reportOverride.trim()
         : (isEditingReportManual ? editedReportText : (generatedReport || "")).trim();
     const modules = modulesOverride || selectedBatchModules;
+    const studyLaterality = typeof laterality === "string" ? laterality.trim() : "";
     if (!activeReport) {
       setModifyError("Genera o redacta un reporte antes de activar los modulos en lote.");
       return;
@@ -399,8 +402,8 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 organOrStudy: specificStudy || studyType || "",
-                laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
                 requestedModel: modelFor("atlas3d"),
                 customDirectives: scorecardDirectives || undefined,
                 panelAssignments: panelAssignments.length ? panelAssignments : undefined,
@@ -430,6 +433,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 requestedModel: modelFor("vascular3d"),
                 customDirectives: vascularDirectives || undefined
               })
@@ -452,6 +456,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 thyroidType: "general_thyroid",
                 requestedModel: modelFor("thyroid3d"),
                 customDirectives: thyroidDirectives || undefined
@@ -476,6 +481,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 breastType: "general_breast",
                 requestedModel: modelFor("breast3d"),
                 customDirectives: breastDirectives || undefined
@@ -509,6 +515,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 shoulderType: "hombro_manguito",
                 requestedModel: modelFor("shoulder3d"),
                 customDirectives: shoulderDirectives || undefined
@@ -542,6 +549,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 kneeType: "rodilla_ligamentos",
                 requestedModel: modelFor("knee3d"),
                 customDirectives: kneeDirectives || undefined
@@ -575,6 +583,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 ankleType: "tobillo_ligamentos",
                 requestedModel: modelFor("ankle3d"),
                 customDirectives: ankleDirectives || undefined
@@ -608,6 +617,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 kidneyType: "renal_b_mode",
                 requestedModel: modelFor("kidney3d"),
                 customDirectives: kidneyDirectives || undefined
@@ -641,6 +651,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 abdomenType: "abdomen_completo",
                 requestedModel: modelFor("abdomen3d"),
                 customDirectives: abdomenDirectives || undefined
@@ -674,6 +685,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 abdominalWallType: "general_pared_abdominal",
                 requestedModel: modelFor("abdominalWall3d"),
                 customDirectives: wallDirectives || undefined
@@ -707,6 +719,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 scrotumType: "general_scrotum",
                 requestedModel: modelFor("scrotum3d"),
                 customDirectives: scrotumDirectives || undefined
@@ -740,6 +753,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 muscleTendonType: "general_musculo_tendon",
                 requestedModel: modelFor("muscleTendon3d"),
                 customDirectives: muscleTendonDirectives || undefined
@@ -773,6 +787,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 reportText: activeReport,
+                laterality: studyLaterality || undefined,
                 wristType: "general_muneca",
                 requestedModel: modelFor("wrist3d"),
                 customDirectives: wristDirectives || undefined

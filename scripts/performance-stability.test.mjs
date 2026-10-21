@@ -122,7 +122,8 @@ test("all thirteen selected suites still execute exactly once with bounded overl
   t.after(() => { globalThis.fetch = originalFetch; });
   let active = 0, peak = 0;
   const calls = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
+    assert.equal(JSON.parse(options.body).laterality, "Izquierda");
     calls.push(url);
     peak = Math.max(peak, ++active);
     await new Promise((resolve) => setTimeout(resolve, 2));
@@ -133,7 +134,7 @@ test("all thirteen selected suites still execute exactly once with bounded overl
     "kidney3d", "abdomen3d", "abdominalWall3d", "scrotum3d", "muscleTendon3d", "wrist3d"];
   const deps = new Proxy({
     generatedReport: "SYNTHETIC REPORT", clinicalHistory: "", specificStudy: "synthetic", studyType: "synthetic",
-    diagnosisAnchor: "", patientGender: "", clinicalScorecardData: null, biomechanicalRadarData: null,
+    diagnosisAnchor: "", patientGender: "Masculino", laterality: "Izquierda", clinicalScorecardData: null, biomechanicalRadarData: null,
     modelFor: () => "synthetic-model", isEditingReportManual: false,
   }, { get: (target, key) => key in target ? target[key] : () => {} });
   await createBatchModuleActivator(deps)(undefined, Object.fromEntries(suites.map((name) => [name, true])));
