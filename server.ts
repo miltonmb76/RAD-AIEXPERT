@@ -40,6 +40,7 @@ import {
   mergeLateralityIntoCopyPlan,
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
+import { renderMskInfographicPoster, mskPosterSource, shareMskAnatomy } from "./src/lib/mskInfographicPoster";
 import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
 import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, type MskImageContract } from "./src/lib/mskImageLaterality";
 import {
@@ -1826,6 +1827,49 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
         report: reportForInfographic, studyType: String(studyType || ""),
         studyLaterality: mskSideLabel(mskSide), correctionNotes: String(correctionNotes || ""),
       });
+    }
+    // General shoulder/knee infographics: AI paints anatomy only. The app
+    // typesets source text in real fonts so the image model cannot add copy.
+    if (mskContract && !isDirected) {
+      const source = mskPosterSource(reportForInfographic, mskContract);
+      const anatomyContract: MskImageContract = { ...mskContract, format: "anatomy", clinicalSite: source };
+      const anatomyImageUrl = await shareMskAnatomy(JSON.stringify([req.header?.("x-goog-authenticated-user-email") || "local", String(correctionNotes || "")]), anatomyContract, async () => {
+        const checked = await generateCheckedMskImage({
+          contract: anatomyContract,
+          generate: async (feedback) => {
+            const rendered = await ai.models.generateContent({
+              model: "gemini-3.1-flash-image-preview",
+              contents: { parts: [{ text: `${feedback}
+Create ONE high-quality medical anatomy illustration on a white background, centered and fully inside the frame. Show only the specified joint and the documented finding, with both orientation landmarks visible. Use realistic clean atlas anatomy, soft lighting, and a transparent cutaway if needed.
+ZERO VISIBLE TEXT: absolutely no words, letters, captions, numbers, measurement marks, labels, callout lines, silhouettes, poster elements or title. This is a standalone anatomical illustration; a separate program prints all clinical text outside it.
+${String(correctionNotes || "").trim() ? `Rendering correction (never print): ${redactPatientIdentifiersForInfographic(String(correctionNotes))}` : ""}
+Clinical source for the anatomy only:
+${source}
+${feedback}
+FINAL CHECK: no visible text anywhere. No reactive bursitis or other findings unless explicitly documented.` }] },
+              config: { imageConfig: { aspectRatio: "3:4", imageSize: "1K" } },
+            });
+            const part = rendered.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData?.data);
+            if (!part?.inlineData?.data) throw new Error("No se pudo generar la ilustración anatómica.");
+            return `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
+          },
+          inspect: async (candidate, instruction) => {
+            const match = candidate.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
+            if (!match) throw new Error("Invalid image");
+            const checked = await ai.models.generateContent({
+              model: getModelName(undefined),
+              contents: { parts: [{ text: instruction }, { inlineData: { mimeType: match[1], data: match[2] } }] },
+              config: { responseMimeType: "application/json", temperature: 0 },
+            });
+            return String(checked.text || "");
+          },
+        });
+        return checked.imageUrl;
+      });
+      const imageUrl = await renderMskInfographicPoster({ anatomyImageUrl, report: source, contract: anatomyContract, audience: audienceMode });
+      return res.json({ success: true, imageUrl, viewOrientation: orientation, audience: audienceMode,
+        mode: "general", copyPlanUsed: false, renderingMode: "app_typeset",
+        lateralitySide: lateralityExtract.side, lateralitySummary: lateralityExtract.summary });
     }
     const lateralityBlock = buildInfographicLateralityPromptBlock(
       orientation,
