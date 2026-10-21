@@ -41,7 +41,6 @@ import {
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
 import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
-import { generateOpenAiInfographic, requireOpenAiInfographicKey, infographicProviderError } from "./src/lib/openaiInfographic";
 import {
   INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
   redactPatientIdentifiersForInfographic,
@@ -1733,16 +1732,12 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  *   report, studyType, correctionNotes?, reportDate?, projections?, viewOrientation?, audience?,
  *   mode?: "general" | "directed",
  *   topic?, orientationBrief?, sections?, includeRecommendations?: "none"|"clinician"|"both",
- *   scorecardContext?, diagnosisAnchor?, studyLaterality?, provider?: "gemini" | "openai"
+ *   scorecardContext?, diagnosisAnchor?, studyLaterality?
  * }
  * General and directed are independent products; the client may keep both.
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
-  const provider = req.body?.provider === "openai" ? "openai" : "gemini";
   try {
-    if (req.body?.provider && !["openai", "gemini"].includes(req.body.provider)) {
-      return res.status(400).json({ success: false, error: "Proveedor de imágenes no válido." });
-    }
     const {
       report,
       studyType,
@@ -1764,8 +1759,7 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
-    if (provider === "openai") requireOpenAiInfographicKey();
-    const ai = provider === "gemini" ? getGeminiClient() : null;
+    const ai = getGeminiClient();
     const dateHint = String(reportDate || "").trim();
     const audienceMode =
       String(audience || "patient").toLowerCase() === "clinician" ? "clinician" : "patient";
@@ -1884,7 +1878,7 @@ RECOMENDACIONES / CONDUCTA:
         allowRecommendations: allowRecoThisAudience,
         lateralityBrief: [lateralityBlock, breastClockBlock].filter(Boolean).join("\n\n"),
       });
-      const planResp = await (ai || getGeminiClient()).models.generateContent({
+      const planResp = await ai.models.generateContent({
         model: planModel,
         contents: { parts: [{ text: planPrompt }] },
         config: {
@@ -1899,7 +1893,7 @@ RECOMENDACIONES / CONDUCTA:
           : planRaw;
       copyPlan = normalizeInfographicCopyPlan(parsed);
     } catch (planErr: any) {
-      if (provider === "gemini") console.warn(
+      console.warn(
         "Infografía: guion de texto no disponible, se sigue con prompt reforzado:",
         planErr?.message || planErr
       );
@@ -1946,7 +1940,7 @@ ${breastClockBlock ? `\n${breastClockBlock}\n` : ""}
 `;
 
     // Freeform poster: quality bar + medical guardrails, but NO fixed layout template.
-    // Both image providers receive the same clinical and layout constraints.
+    // Gemini image invents the composition that best fits THIS report + audience (+ directed brief).
     const promptText =
       audienceMode === "clinician"
         ? `
@@ -2025,25 +2019,8 @@ ${recoBlock}
 Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
-    if (provider === "openai") {
-      if (res.destroyed) return;
-      const controller = new AbortController();
-      const onClose = () => { if (!res.writableEnded) controller.abort(); };
-      res.on("close", onClose);
-      try {
-        const image = await generateOpenAiInfographic(promptText, controller.signal);
-        if (!controller.signal.aborted) res.json({
-          success: true, ...image, provider, viewOrientation: orientation,
-          audience: audienceMode, mode: isDirected ? "directed" : "general",
-          copyPlanUsed: Boolean(copyPlan), lateralitySide: lateralityExtract.side,
-          lateralitySummary: lateralityExtract.summary,
-        });
-      } finally { res.off("close", onClose); }
-      return;
-    }
-
     const tryGenerate = async (aspectRatio: string, imageSize: string) => {
-      const response = await ai!.models.generateContent({
+      const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
         contents: {
           parts: [{ text: promptText }],
@@ -2093,8 +2070,6 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
     res.json({
       success: true,
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
-      provider: "gemini",
-      model: "gemini-3.1-flash-image-preview",
       viewOrientation: orientation,
       audience: audienceMode,
       mode: isDirected ? "directed" : "general",
@@ -2103,11 +2078,6 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       lateralitySummary: lateralityExtract.summary,
     });
   } catch (error: any) {
-    if (provider === "openai") {
-      const safeError = infographicProviderError(error);
-      if (!res.destroyed) res.status(safeError.status).json({ success: false, error: safeError.message, provider });
-      return;
-    }
     console.error("Error en /api/generate-infographic:", error);
     const friendlyError = handleGeminiError(error);
     res.status(500).json({
