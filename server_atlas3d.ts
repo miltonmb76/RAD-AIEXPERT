@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { resolveFocalPlanePair } from "./src/lib/focalPlanePair";
 import { extractJsonObject } from "./src/lib/reasoningChain";
 import { ensureBreastSuiteFichaFields } from "./src/lib/breastSuiteFicha";
-import { generateCheckedMskImage, generateMskPlan, hasMskSideConflict, resolveMskLaterality, mskSideLabel, detectMskView, type MskOrgan } from "./src/lib/mskImageLaterality";
+import { generateCheckedMskImage, generateMskPlan, hasMskSideConflict, resolveMskLaterality, mskSideLabel, detectMskView, MskImageValidationError, type MskOrgan } from "./src/lib/mskImageLaterality";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -97,6 +97,7 @@ function getModelName(requestedModel?: string): string {
 }
 
 function handleGeminiError(error: any): string {
+  if (error instanceof MskImageValidationError) return error.message;
   const errorMsg = error?.message || "";
   const fullErrorStr = `${errorMsg} ${String(error)}`.toLowerCase();
   
@@ -1601,13 +1602,15 @@ export function registerAtlas3DRoutes(app: express.Express) {
   async function generateMedicalImage(
     ai: any,
     prompt: string,
-    opts?: { referenceImageUrl?: string | null; referenceKind?: "us" | "cgi_sibling" }
+    opts?: { referenceImageUrl?: string | null; referenceKind?: "us" | "cgi_sibling" | "msk_correction" }
   ): Promise<string> {
     // Central choke-point: every suite / atlas / vascular / focal render gets clean-PNG rules.
     const reinforcedPrompt = reinforceCleanRenderPrompt(prompt);
     const ref = opts?.referenceImageUrl ? stripDataUrl(opts.referenceImageUrl) : null;
     const refGuide =
-      opts?.referenceKind === "cgi_sibling"
+      opts?.referenceKind === "msk_correction"
+        ? "The reference is a REJECTED generated image. Correct the specific faults listed in the prompt; do not preserve its incorrect side, view or lesion site. Keep correct clinical content, scale and elegant composition. Redraw anatomy rather than mirroring the whole image or relabeling it."
+        : opts?.referenceKind === "cgi_sibling"
         ? CGI_SIBLING_REFERENCE_GUIDE
         : BRIDGE_US_REFERENCE_GUIDE;
 
@@ -1636,7 +1639,8 @@ export function registerAtlas3DRoutes(app: express.Express) {
       if (!base64Image) {
         throw new Error("No inlineData image returned from gemini-3.1-flash-image-preview");
       }
-      return `data:image/jpeg;base64,${base64Image}`;
+      const imagePart = response.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data);
+      return `data:${imagePart?.inlineData?.mimeType || "image/jpeg"};base64,${base64Image}`;
     };
 
     // Prefer multimodal reference when available (Bridge US→3D or Focal A→B).
@@ -1686,7 +1690,9 @@ export function registerAtlas3DRoutes(app: express.Express) {
     }
     const checked = await generateCheckedMskImage({
       contract: { organ, side, view: detectMskView(prompt), clinicalSite },
-      generate: (feedback) => generateMedicalImage(ai, `${feedback}\n${prompt}\n${feedback}`),
+      maxAttempts: 3,
+      generate: (feedback, rejectedImage) => generateMedicalImage(ai, `${feedback}\n${prompt}\n${feedback}`,
+        rejectedImage ? { referenceImageUrl: rejectedImage, referenceKind: "msk_correction" } : undefined),
       inspect: async (imageUrl, instruction) => {
         const image = stripDataUrl(imageUrl);
         if (!image) throw new Error("Invalid image");
@@ -1697,6 +1703,11 @@ export function registerAtlas3DRoutes(app: express.Express) {
         });
         return String(response.text || "");
       },
+    }).catch(error => {
+      if (error instanceof MskImageValidationError) console.warn(JSON.stringify({
+        event: "MSK_IMAGE_REJECTED", format: "atlas", organ, ...error.validation,
+      }));
+      throw error;
     });
     return checked.imageUrl;
   }

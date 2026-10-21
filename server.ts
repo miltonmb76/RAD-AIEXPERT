@@ -41,7 +41,7 @@ import {
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
 import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
-import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, type MskImageContract } from "./src/lib/mskImageLaterality";
+import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, MskImageValidationError, type MskImageContract } from "./src/lib/mskImageLaterality";
 import {
   INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
   redactPatientIdentifiersForInfographic,
@@ -214,6 +214,7 @@ function getGeminiClient(): GoogleGenAI {
 
 // Intercepts and formats Gemini API errors to provide clear guidance to the user
 function handleGeminiError(error: any): string {
+  if (error instanceof MskImageValidationError) return error.message;
   const errorMsg = error?.message || "";
   const errorJson = typeof error === "object" ? JSON.stringify(error) : "";
   const fullErrorStr = `${errorMsg} ${errorJson} ${String(error)}`.toLowerCase();
@@ -2042,11 +2043,13 @@ ${recoBlock}
 Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
-    const tryGenerate = async (aspectRatio: string, imageSize: string, feedback = "") => {
+    const tryGenerate = async (aspectRatio: string, imageSize: string, feedback = "", rejectedImage?: string) => {
+      const reference = rejectedImage?.match(/^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/);
       const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
         contents: {
-          parts: [{ text: `${feedback}\n${promptText}\n${feedback}` }],
+          parts: [{ text: `${feedback}\n${promptText}\n${feedback}` },
+            ...(reference ? [{ inlineData: { mimeType: reference[1], data: reference[2] } }] : [])],
         },
         config: {
           imageConfig: {
@@ -2056,14 +2059,16 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
         },
       });
       let base64Image = "";
+      let imageMime = "image/jpeg";
       const parts = response.candidates?.[0]?.content?.parts || [];
       for (const part of parts) {
         if (part.inlineData?.data) {
           base64Image = part.inlineData.data;
+          imageMime = part.inlineData.mimeType || "image/jpeg";
           break;
         }
       }
-      return base64Image;
+      return base64Image ? `data:${imageMime};base64,${base64Image}` : "";
     };
 
     // Prefer a vertical poster; fall back if the size/ratio is rejected.
@@ -2073,12 +2078,12 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       ["4:5", "1K"],
       ["1:1", "1K"],
     ];
-    const renderCandidate = async (feedback = "") => {
+    const renderCandidate = async (feedback = "", rejectedImage?: string) => {
       let lastError: any = null;
       for (const [aspectRatio, imageSize] of attempts) {
         try {
-          const base64Image = await tryGenerate(aspectRatio, imageSize, feedback);
-          if (base64Image) return `data:image/jpeg;base64,${base64Image}`;
+          const imageUrl = await tryGenerate(aspectRatio, imageSize, feedback, rejectedImage);
+          if (imageUrl) return imageUrl;
         } catch (err) {
           lastError = err;
           console.warn(`Infografía: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
@@ -2089,6 +2094,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
     };
     const imageUrl = mskContract ? (await generateCheckedMskImage({
       contract: { ...mskContract, expectedCopy: copyPlan ? buildLockedCopyPromptBlock(copyPlan) : undefined },
+      maxAttempts: 3,
       generate: renderCandidate,
       inspect: async (candidate, instruction) => {
         const match = candidate.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
@@ -2113,11 +2119,15 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       lateralitySummary: lateralityExtract.summary,
     });
   } catch (error: any) {
-    console.error("Error en /api/generate-infographic:", error);
+    if (error instanceof MskImageValidationError) console.warn(JSON.stringify({ event: "MSK_IMAGE_REJECTED",
+      audience: req.body?.audience === "clinician" ? "clinician" : "patient", ...error.validation,
+    }));
+    else console.error("Error en /api/generate-infographic:", error);
     const friendlyError = handleGeminiError(error);
     res.status(500).json({
       success: false,
       error: friendlyError,
+      ...(error instanceof MskImageValidationError ? { validation: error.validation } : {}),
     });
   }
 });
