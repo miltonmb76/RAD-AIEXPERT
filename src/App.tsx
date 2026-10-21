@@ -43,6 +43,7 @@ import {
   Suite3DSuspense,
 } from "./appLazyModules";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { InfographicComparison } from "./components/InfographicComparison";
 import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
@@ -299,6 +300,7 @@ export default function App() {
     "patient"
   );
   const [infographicError, setInfographicError] = useState<string | null>(null);
+  const [infographicComparisonEpoch, setInfographicComparisonEpoch] = useState(0);
   const [attachInfographicToOfficialReport, setAttachInfographicToOfficialReport] = useState<boolean>(false);
   /** Opt-in: include generated infographic in the patient explanation PDF */
   const [attachInfographicToPatientSummary, setAttachInfographicToPatientSummary] = useState<boolean>(false);
@@ -3266,6 +3268,7 @@ Ejemplo:
       return;
     }
 
+    setInfographicComparisonEpoch(value => value + 1);
     // --- Identidad de sesión / worklist activa ---
     setCurrentCloudStudyId("");
     if (worklist?.patients?.length) {
@@ -9184,6 +9187,29 @@ Ejemplo:
                               className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-pink-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
                             />
                           </div>
+                        )}
+                        {generatedReport && studyType && (
+                          <AppErrorBoundary>
+                            <InfographicComparison
+                              contextKey={JSON.stringify([infographicComparisonEpoch, patientId, patientName, activeWorklistPatient?.patientId, currentCloudStudyId])}
+                              input={{ report: generatedReport, studyType, reportDate: reportDate || "", projections,
+                                viewOrientation: infographicViewOrientation, studyLaterality: laterality || "",
+                                diagnosisAnchor: String(diagnosisAnchor || "").trim(), correctionNotes: infographicCorrectionNotes.trim() }}
+                              patientImage={infographicUrl}
+                              clinicianImage={infographicClinicianUrl}
+                              busy={isGeneratingInfographic}
+                              onUse={(audience, imageUrl) => {
+                                if (audience === "patient") {
+                                  setInfographicUrl(imageUrl);
+                                  setAttachInfographicToPatientSummary(true);
+                                } else {
+                                  setInfographicClinicianUrl(imageUrl);
+                                  setAttachInfographicToOfficialReport(true);
+                                }
+                                setInfographicAudienceTab(audience);
+                              }}
+                            />
+                          </AppErrorBoundary>
                         )}
                         {(infographicUrl || infographicClinicianUrl) && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
