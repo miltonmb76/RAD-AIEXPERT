@@ -83,6 +83,7 @@ export function buildMskLandmarkBrief(contract: MskImageContract): string {
     : `Humeral greater tuberosity / lateral arm on viewer ${lateral}; medial clavicle toward sternum on viewer ${medial}. Acromion is lateral; do not exchange subscapularis (anterior) with infraspinatus (posterior).`;
   return `LOCKED MSK ANATOMY: PATIENT ${contract.side.toUpperCase()} ${contract.organ.toUpperCase()}, ${contract.view === "AP" ? "ANTERIOR / AP view" : "POSTERIOR / PA view"}. ${landmarks}
 This is the orientation WITHIN the anatomical close-up, independent of where the panel is placed on the page. Show enough landmarks to establish the side. Preserve the exact documented clinical site: ${contract.clinicalSite || "Use only the report; do not invent a lesion or compartment"}.
+For a unilateral study, illustrate ONLY the locked patient side in every anatomical close-up and inset. Do not add a drawing of the normal contralateral joint; mention it in text only if needed. Full-body orientation silhouettes may show both sides, but highlight only the documented side. Every magnified inset must preserve the locked side and its landmarks.
 Do not mirror for layout. Do not replace anatomical correction with a different title. Do not print these camera instructions inside the image.`;
 }
 
@@ -106,7 +107,7 @@ export function acceptsMskVisualCheck(result: any, contract: MskImageContract): 
   const medial = lateral === "left" ? "right" : "left";
   return result?.anatomicalSide === contract.side && result?.view === contract.view &&
     result?.lateralLandmarkPosition === lateral && result?.medialLandmarkPosition === medial &&
-    result?.landmarksVisible === true && result?.clinicalSiteMatches === true &&
+    result?.landmarksVisible === true && result?.clinicalSiteMatches === true && result?.allPanelsConsistent === true &&
     Array.isArray(result?.observations) && result.observations.some((x: unknown) => typeof x === "string" && x.trim().length > 10);
 }
 
@@ -123,8 +124,8 @@ export async function generateCheckedMskImage(args: {
     let result: unknown;
     try {
       result = await args.inspect(imageUrl, `Audit the DRAWN ANATOMY, not the title or R/L labels. ${brief}
-If the camera is lateral/oblique or landmarks do not establish the side, return unknown and false. For clinicalSiteMatches inspect the drawn lesion location and internal/external compartment and anterior/body/posterior position, not merely the caption. A regional overview need not show every finding; assess the site actually depicted against the clinical source. No diagnosis is requested.
-Return ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment object per anatomical panel]}. Both sides must be assessed separately. Assessment object schema:' : 'JSON with schema:'} {"anatomicalSide":"right|left|unknown","view":"AP|PA|unknown","lateralLandmarkPosition":"left|right|unknown","medialLandmarkPosition":"left|right|unknown","landmarksVisible":boolean,"clinicalSiteMatches":boolean,"observations":["Visible anatomical evidence"]}.`);
+If the camera is lateral/oblique or landmarks do not establish the side, return unknown and false. For clinicalSiteMatches inspect the drawn lesion location and internal/external compartment and anterior/body/posterior position, not merely the caption. A regional overview need not show every finding; assess the site actually depicted against the clinical source. Inspect EVERY anatomical close-up/inset, including small comparison illustrations: allPanelsConsistent is false if any inset contradicts its side label, swaps the side/site, or cannot be oriented. Do not approve based only on the largest illustration. Full-body silhouettes are orientation references; check that their highlighted side agrees. Explain evidence for each inset in observations. No diagnosis is requested.
+Return ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment object per anatomical panel]}. Both sides must be assessed separately. Assessment object schema:' : 'JSON with schema:'} {"anatomicalSide":"right|left|unknown","view":"AP|PA|unknown","lateralLandmarkPosition":"left|right|unknown","medialLandmarkPosition":"left|right|unknown","landmarksVisible":boolean,"clinicalSiteMatches":boolean,"allPanelsConsistent":boolean,"observations":["Visible anatomical evidence"]}.`);
       if (typeof result === "string") result = extractJsonObject(result);
     } catch {
       // Provider failure is not evidence that an image is correct.

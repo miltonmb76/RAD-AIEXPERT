@@ -15,7 +15,7 @@ const observation = (contract, patch = {}) => {
   const lateral = (contract.side === "right") === (contract.view === "AP") ? "left" : "right";
   return { anatomicalSide: contract.side, view: contract.view,
     lateralLandmarkPosition: lateral, medialLandmarkPosition: lateral === "left" ? "right" : "left",
-    landmarksVisible: true, clinicalSiteMatches: true,
+    landmarksVisible: true, clinicalSiteMatches: true, allPanelsConsistent: true,
     observations: ["Synthetic visible landmark evidence, no patient data"], ...patch };
 };
 
@@ -45,6 +45,8 @@ for (const organ of ["knee", "shoulder"]) for (const side of ["right", "left"]) 
     assert.equal(acceptsMskVisualCheck(observation(contract, { lateralLandmarkPosition: "unknown" }), contract), false);
     assert.equal(acceptsMskVisualCheck(observation(contract, { clinicalSiteMatches: false }), contract), false);
     assert.equal(acceptsMskVisualCheck(observation(contract, { landmarksVisible: "true" }), contract), false);
+    assert.equal(acceptsMskVisualCheck(observation(contract, { allPanelsConsistent: false }), contract), false);
+    assert.equal(acceptsMskVisualCheck(observation(contract, { allPanelsConsistent: undefined }), contract), false);
     const brief = buildMskLandmarkBrief(contract);
     assert.match(brief, /independent of where the panel is placed/);
     if (organ === "knee") assert.match(brief, /EXTERNAL.*adjacent to the fibula.*INTERNAL.*opposite the fibula/);
