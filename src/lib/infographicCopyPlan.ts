@@ -28,9 +28,21 @@ function cleanLine(s: unknown, maxLen: number): string {
     .slice(0, maxLen);
 }
 
-export function normalizeInfographicCopyPlan(raw: unknown): InfographicCopyPlan | null {
+export function normalizeInfographicCopyPlan(raw: unknown, opts?: { strict?: boolean }): InfographicCopyPlan | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
+  // A clinical summary must never acquire a cut-off measurement or qualifier.
+  // Reject an overlong script instead of silently slicing its sentences.
+  if (opts?.strict) {
+    const fits = (value: unknown, limit: number) => value == null ||
+      (typeof value === "string" && value.replace(/\s+/g, " ").trim().length <= limit);
+    if (!fits(o.title, 90) || !fits(o.subtitle, 100) || !fits(o.footer, 140) ||
+        !Array.isArray(o.callouts) || o.callouts.length < 1 || o.callouts.length > MAX_CALLOUTS ||
+        o.callouts.some(c => !c || typeof c !== "object" || !String(c.label || "").trim() ||
+          !fits(c.label, 72) || !fits(c.detail, 120)) ||
+        (o.mustSpellExactly != null && (!Array.isArray(o.mustSpellExactly) ||
+          o.mustSpellExactly.length > MAX_MUST || o.mustSpellExactly.some(m => !fits(m, 48))))) return null;
+  }
   const title = cleanLine(o.title, 90);
   if (title.length < 3) return null;
 
@@ -74,8 +86,10 @@ export function normalizeInfographicCopyPlan(raw: unknown): InfographicCopyPlan 
 /** Hard rules for the image model — fewer words, exact spelling. */
 export const INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK = `
 TEXTO EN LA IMAGEN — PRECISIÓN ORTOGRÁFICA (prioridad máxima):
+- La IA debe convertir los hallazgos en una demostración visual rápida, inteligente, elegante y atractiva: elige esquemas, anatomía y recursos gráficos que comuniquen el caso. El dibujo es protagonista; el texto solo destaca los hallazgos esenciales.
+- No copies el informe completo, su técnica ni bloques de su conclusión. Usa el resumen de etiquetas del guion, con composición visual libre y aire generoso.
 - El texto visible DEBE estar en español correcto (tildes, ñ, mayúsculas solo donde correspondan).
-- PREFIERE POCAS PALABRAS: título corto + 3–6 etiquetas/callouts breves. Nada de párrafos largos.
+- PREFIERE POCAS PALABRAS: título corto + 1–6 etiquetas/callouts breves, solo las necesarias. Nada de párrafos largos.
 - Copia términos médicos, medidas y siglas EXACTAMENTE como en el reporte o en el GUION BLOQUEADO (si existe): no inventes grafías (p. ej. no “colecistitis” si el informe dice “colelitiasis”).
 - PROHIBIDO: palabras a medias, letras mezcladas, inglés accidental, “lorem”, filigranas ilegibles o texto decorativo sin sentido.
 - Si dudases de una palabra, omítela o usa la forma del GUION BLOQUEADO / reporte; nunca improvises ortografía.
@@ -158,6 +172,8 @@ Devuelve SOLO un JSON válido con esta forma:
 }
 
 REGLAS:
+- Esto es un RESUMEN VISUAL ESQUEMÁTICO y elegante de los hallazgos, no una transcripción del reporte ni de su conclusión. El dibujo debe ser protagonista. Omite técnica, historia clínica y párrafos de descripción exhaustiva.
+- ${opts.audience === "patient" ? "Usa lenguaje sencillo para el paciente: explica los hallazgos con frases breves comprensibles; conserva las medidas y el lado." : "Usa lenguaje técnico conciso para el médico: conserva estructura, localización, lateralidad, medidas y calificadores relevantes."}
 - Español impecable: tildes (diagnóstico, médico, vesícula…), ñ, plurales correctos.
 - 1 a 6 callouts, solo los necesarios para los hallazgos documentados. Si hay un único hallazgo, usa un único callout; no rellenes con hallazgos adicionales. Frases cortas. Sin párrafos.
 - No afirmes que una estructura es normal o patológica si el reporte no lo dice. No deduzcas bursitis reactiva, derrame, hallazgos del bíceps, pinzamiento ni grados de severidad por asociación.

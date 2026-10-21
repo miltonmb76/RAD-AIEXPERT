@@ -40,7 +40,6 @@ import {
   mergeLateralityIntoCopyPlan,
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
-import { renderMskInfographicPoster, mskPosterSource, shareMskAnatomy } from "./src/lib/mskInfographicPoster";
 import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
 import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, type MskImageContract } from "./src/lib/mskImageLaterality";
 import {
@@ -1828,49 +1827,6 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
         studyLaterality: mskSideLabel(mskSide), correctionNotes: String(correctionNotes || ""),
       });
     }
-    // General shoulder/knee infographics: AI paints anatomy only. The app
-    // typesets source text in real fonts so the image model cannot add copy.
-    if (mskContract && !isDirected) {
-      const source = mskPosterSource(reportForInfographic, mskContract);
-      const anatomyContract: MskImageContract = { ...mskContract, format: "anatomy", clinicalSite: source };
-      const anatomyImageUrl = await shareMskAnatomy(JSON.stringify([req.header?.("x-goog-authenticated-user-email") || "local", String(correctionNotes || "")]), anatomyContract, async () => {
-        const checked = await generateCheckedMskImage({
-          contract: anatomyContract,
-          generate: async (feedback) => {
-            const rendered = await ai.models.generateContent({
-              model: "gemini-3.1-flash-image-preview",
-              contents: { parts: [{ text: `${feedback}
-Create ONE high-quality medical anatomy illustration on a white background, centered and fully inside the frame. Show only the specified joint and the documented finding, with both orientation landmarks visible. Use realistic clean atlas anatomy, soft lighting, and a transparent cutaway if needed.
-ZERO VISIBLE TEXT: absolutely no words, letters, captions, numbers, measurement marks, labels, callout lines, silhouettes, poster elements or title. This is a standalone anatomical illustration; a separate program prints all clinical text outside it.
-${String(correctionNotes || "").trim() ? `Rendering correction (never print): ${redactPatientIdentifiersForInfographic(String(correctionNotes))}` : ""}
-Clinical source for the anatomy only:
-${source}
-${feedback}
-FINAL CHECK: no visible text anywhere. No reactive bursitis or other findings unless explicitly documented.` }] },
-              config: { imageConfig: { aspectRatio: "3:4", imageSize: "1K" } },
-            });
-            const part = rendered.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData?.data);
-            if (!part?.inlineData?.data) throw new Error("No se pudo generar la ilustración anatómica.");
-            return `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
-          },
-          inspect: async (candidate, instruction) => {
-            const match = candidate.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
-            if (!match) throw new Error("Invalid image");
-            const checked = await ai.models.generateContent({
-              model: getModelName(undefined),
-              contents: { parts: [{ text: instruction }, { inlineData: { mimeType: match[1], data: match[2] } }] },
-              config: { responseMimeType: "application/json", temperature: 0 },
-            });
-            return String(checked.text || "");
-          },
-        });
-        return checked.imageUrl;
-      });
-      const imageUrl = await renderMskInfographicPoster({ anatomyImageUrl, report: source, contract: anatomyContract, audience: audienceMode });
-      return res.json({ success: true, imageUrl, viewOrientation: orientation, audience: audienceMode,
-        mode: "general", copyPlanUsed: false, renderingMode: "app_typeset",
-        lateralitySide: lateralityExtract.side, lateralitySummary: lateralityExtract.summary });
-    }
     const lateralityBlock = buildInfographicLateralityPromptBlock(
       orientation,
       lateralityExtract,
@@ -1926,37 +1882,44 @@ RECOMENDACIONES / CONDUCTA:
 
     // Step 1: text LLM plans exact Spanish strings (reduces image-model spelling gibberish).
     let copyPlan: InfographicCopyPlan | null = null;
-    try {
-      const planModel = getModelName(undefined); // 3.8 Flash — cheap, strong Spanish
-      const planPrompt = buildInfographicCopyPlanPrompt({
-        audience: audienceMode,
-        studyType: String(studyType || ""),
-        report: reportForInfographic.slice(0, 14000),
-        isDirected,
-        topicText,
-        correctionNotes: String(correctionNotes || ""),
-        allowRecommendations: allowRecoThisAudience,
-        lateralityBrief: [lateralityBlock, breastClockBlock].filter(Boolean).join("\n\n"),
-      });
-      const planResp = await ai.models.generateContent({
-        model: planModel,
-        contents: { parts: [{ text: planPrompt }] },
-        config: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-        },
-      });
-      const planRaw = extractJsonObject(String(planResp.text || "")) || planResp.text;
-      const parsed =
-        typeof planRaw === "string"
-          ? JSON.parse(planRaw)
-          : planRaw;
-      copyPlan = normalizeInfographicCopyPlan(parsed);
-    } catch (planErr: any) {
-      console.warn(
-        "Infografía: guion de texto no disponible, se sigue con prompt reforzado:",
-        planErr?.message || planErr
-      );
+    for (let planAttempt = 0; planAttempt < (mskContract ? 2 : 1); planAttempt++) {
+      try {
+        const planModel = getModelName(undefined); // 3.8 Flash — cheap, strong Spanish
+        const planPrompt = buildInfographicCopyPlanPrompt({
+          audience: audienceMode,
+          studyType: String(studyType || ""),
+          report: reportForInfographic.slice(0, 14000),
+          isDirected,
+          topicText,
+          correctionNotes: String(correctionNotes || ""),
+          allowRecommendations: allowRecoThisAudience,
+          lateralityBrief: [lateralityBlock, breastClockBlock].filter(Boolean).join("\n\n"),
+        });
+        const planResp = await ai.models.generateContent({
+          model: planModel,
+          contents: { parts: [{ text: planPrompt + (planAttempt ? "\nEl guion anterior no cumplió el formato breve. Devuelve 1–6 etiquetas: título ≤90 caracteres, etiqueta ≤72, detalle ≤120. Conserva medidas y calificadores completos; no transcribas párrafos." : "") }] },
+          config: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+          },
+        });
+        const planRaw = extractJsonObject(String(planResp.text || "")) || planResp.text;
+        const parsed =
+          typeof planRaw === "string"
+            ? JSON.parse(planRaw)
+            : planRaw;
+        copyPlan = normalizeInfographicCopyPlan(parsed, { strict: Boolean(mskContract) });
+        if (copyPlan) break;
+      } catch (planErr: any) {
+        console.warn(
+          "Infografía: no se pudo preparar el guion en este intento:",
+          planErr?.message || planErr
+        );
+      }
+    }
+    if (mskContract && !copyPlan) {
+      return res.status(502).json({ success: false,
+        error: "No se pudo preparar un resumen breve y completo para la infografía. Intenta generar de nuevo." });
     }
     if (copyPlan) {
       copyPlan = mergeLateralityIntoCopyPlan(copyPlan, orientation, lateralityExtract);
@@ -2125,7 +2088,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       throw new Error("No se pudo generar la imagen de la infografía.");
     };
     const imageUrl = mskContract ? (await generateCheckedMskImage({
-      contract: mskContract,
+      contract: { ...mskContract, expectedCopy: copyPlan ? buildLockedCopyPromptBlock(copyPlan) : undefined },
       generate: renderCandidate,
       inspect: async (candidate, instruction) => {
         const match = candidate.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);

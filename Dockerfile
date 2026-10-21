@@ -5,13 +5,12 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build && npm run build:msk-smoke
+RUN npm run test:msk && npm run build
 
 FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=8080
-ENV XDG_CACHE_HOME=/tmp/rad-ai-font-cache
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -20,16 +19,12 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.cjs ./server.cjs
 COPY --from=build /app/server.cjs.map ./server.cjs.map
-COPY --from=build /app/assets/fonts ./assets/fonts
-COPY --from=build /app/msk-render-smoke.mjs ./msk-render-smoke.mjs
 COPY firebase-applet-config.json ./
-
-RUN mkdir -p /tmp/rad-ai-font-cache && chown node:node /tmp/rad-ai-font-cache
+COPY scripts/msk-pdf-smoke.mjs ./msk-pdf-smoke.mjs
 
 USER node
-# Fail the build if real runtime fonts, PNG composition or PDF embedding fail.
-# Uses neutral image fixtures; no API calls, credentials or patient data.
-RUN node msk-render-smoke.mjs
+# Offline regression check: no AI calls, credentials or patient data.
+RUN node msk-pdf-smoke.mjs
 EXPOSE 8080
 
 CMD ["node", "server.cjs"]

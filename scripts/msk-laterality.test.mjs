@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import sharp from "sharp";
-import { createRequire } from "node:module";
 import {
   resolveMskLaterality, detectMskView, detectMskOrgan, buildMskLandmarkBrief,
   acceptsMskVisualCheck, generateCheckedMskImage, generateMskPlan,
@@ -17,7 +15,7 @@ const observation = (contract, patch = {}) => {
   const lateral = (contract.side === "right") === (contract.view === "AP") ? "left" : "right";
   return { anatomicalSide: contract.side, view: contract.view,
     lateralLandmarkPosition: lateral, medialLandmarkPosition: lateral === "left" ? "right" : "left",
-    landmarksVisible: true, clinicalSiteMatches: true, allPanelsConsistent: true, visibleTextAbsent: true, noUnsupportedFindings: true, textMatchesClinicalSource: true, productionInstructionsAbsent: true,
+    landmarksVisible: true, clinicalSiteMatches: true, allPanelsConsistent: true, textMatchesClinicalSource: true, productionInstructionsAbsent: true, textLegibleAndCorrect: true,
     observations: ["Synthetic visible landmark evidence, no patient data"], ...patch };
 };
 
@@ -80,7 +78,7 @@ test("bilateral images require independent valid anatomy for both sides", () => 
 
 test("infographics reject leaked production instructions and unsupported clinical text", async () => {
   const contract = { organ: "shoulder", side: "left", view: "AP", format: "infographic", clinicalSite: "Hombro izquierdo: rotura parcial bursal 6 x 3 mm." };
-  for (const field of ["textMatchesClinicalSource", "productionInstructionsAbsent"]) {
+  for (const field of ["textMatchesClinicalSource", "productionInstructionsAbsent", "textLegibleAndCorrect"]) {
     assert.equal(acceptsMskVisualCheck(observation(contract, { [field]: false }), contract), false);
     assert.equal(acceptsMskVisualCheck(observation(contract, { [field]: undefined }), contract), false);
     let audits = 0; const prompts = [];
@@ -235,7 +233,6 @@ test("actual infographic route checks patient/clinician images and blocks failed
       import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage } from './src/lib/mskImageLaterality';
       import { buildInfographicLateralityPromptBlock, detectInfographicViewOrientation, extractInfographicLaterality, mergeLateralityIntoCopyPlan } from './src/lib/infographicLaterality';
       import { buildInfographicBreastClockBrief } from './src/lib/infographicBreastClock';
-      import { renderMskInfographicPoster, mskPosterSource, shareMskAnatomy } from './src/lib/mskInfographicPoster';
       import { INFOGRAPHIC_PRIVACY_PROMPT_BLOCK, redactPatientIdentifiersForInfographic } from './src/lib/infographicPrivacy';
       import { INFOGRAPHIC_NO_REAL_US_PROMPT_BLOCK } from './src/lib/infographicNoRealUs';
       import { INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK, buildInfographicCopyPlanPrompt, buildLockedCopyPromptBlock, normalizeInfographicCopyPlan } from './src/lib/infographicCopyPlan';
@@ -247,23 +244,21 @@ test("actual infographic route checks patient/clinician images and blocks failed
       const handleGeminiError = (error) => error.message;
     `;
     const output = await build({ stdin: { contents: setup + server.slice(start, end) + '\nexport { handler };', loader: "ts", resolveDir: resolve(".") },
-      bundle: true, platform: "node", format: "esm", write: false,
-      plugins: [{ name: "native-sharp", setup(builder) {
-        builder.onResolve({ filter: /^sharp$/ }, () => ({ path: createRequire(import.meta.url).resolve("sharp"), external: true }));
-      } }] });
+      bundle: true, platform: "node", format: "esm", write: false });
     const file = join(folder, "route.mjs"); await writeFile(file, output.outputFiles[0].text);
     const { handler } = await import(pathToFileURL(file).href);
-    const fixturePng = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#fff" } }).png().toBuffer();
-    const fixture = { images: 0, audits: 0, plans: 0, check: null, ai: { models: { generateContent: async (request) => {
+    const briefPlan = { title: "Synthetic clinical title", callouts: [{ label: "Hallazgo", detail: "Informe sintético del estudio izquierdo" }], mustSpellExactly: [] };
+    const fixture = { images: 0, audits: 0, plans: 0, planQueue: [], requests: [], check: null, ai: { models: { generateContent: async (request) => {
+      fixture.requests.push(request);
       if (request.config?.imageConfig) {
         fixture.images++;
-        return { candidates: [{ content: { parts: [{ inlineData: { data: fixturePng.toString('base64'), mimeType: 'image/png' } }] } }] };
+        return { candidates: [{ content: { parts: [{ inlineData: { data: 'U1lOVEhFVElD' } }] } }] };
       }
       if (request.contents?.parts?.some((part) => part.inlineData)) {
         fixture.audits++; return { text: JSON.stringify(fixture.check) };
       }
       fixture.plans++;
-      return { text: JSON.stringify({ title: "Synthetic clinical title", callouts: [{ label: "Hallazgo", detail: "Informe sintético del estudio izquierdo" }], mustSpellExactly: [] }) };
+      return { text: JSON.stringify(fixture.planQueue.length ? fixture.planQueue.shift() : briefPlan) };
     } } } };
     globalThis.__infographicFixture = fixture;
     const run = async (body) => {
@@ -272,14 +267,20 @@ test("actual infographic route checks patient/clinician images and blocks failed
       return { code, result };
     };
     for (const organ of ["knee", "shoulder"]) for (const audience of ["patient", "clinician"]) {
-      fixture.images = fixture.audits = 0;
+      fixture.images = fixture.audits = fixture.plans = 0;
+      fixture.requests = [];
       const body = { studyType: organ === "knee" ? "Rodilla" : "Hombro", report: "Informe sintético del estudio izquierdo.", studyLaterality: "Izquierda", audience };
       fixture.check = observation({ organ, side: "left", view: "AP" });
       const passed = await run(body);
       assert.equal(passed.code, 200);
-      assert.match(passed.result.imageUrl, /^data:image\/png;base64,/);
-      assert.equal(passed.result.renderingMode, "app_typeset");
-      assert.equal(fixture.plans, 0, "MSK clinical copy is never written by an AI copy planner");
+      assert.equal(passed.result.imageUrl, image);
+      assert.equal(passed.result.copyPlanUsed, true);
+      assert.equal(fixture.plans, 1);
+      assert.match(fixture.requests[0].contents.parts[0].text, audience === "patient" ? /lenguaje sencillo para el paciente/ : /lenguaje técnico conciso para el médico/);
+      const drawingPrompt = fixture.requests.find(r => r.config?.imageConfig).contents.parts[0].text;
+      assert.match(drawingPrompt, /demostración visual rápida/);
+      assert.match(drawingPrompt, /No copies el informe completo/);
+      assert.match(drawingPrompt, /GUION DE TEXTO BLOQUEADO/);
       assert.equal(passed.result.lateralitySide, "left");
       assert.equal(fixture.audits, 1);
       fixture.images = fixture.audits = 0;
@@ -289,7 +290,7 @@ test("actual infographic route checks patient/clinician images and blocks failed
       assert.equal(rejected.result.imageUrl, undefined);
       assert.equal(fixture.images, 2);
       assert.equal(fixture.audits, 2);
-      for (const field of ["visibleTextAbsent", "noUnsupportedFindings"]) {
+      for (const field of ["textMatchesClinicalSource", "productionInstructionsAbsent", "textLegibleAndCorrect"]) {
         fixture.images = fixture.audits = 0;
         fixture.check = observation({ organ, side: "left", view: "AP" }, { [field]: false });
         const badCopy = await run(body);
@@ -301,13 +302,22 @@ test("actual infographic route checks patient/clinician images and blocks failed
     fixture.check = { panels: [observation({ side: "right", view: "AP" }), observation({ side: "left", view: "AP" })] };
     const bilateral = await run({ studyType: "Rodilla", report: "Rodilla derecha y rodilla izquierda: estudio sintético.", studyLaterality: "Bilateral" });
     assert.equal(bilateral.result.success, true);
-    fixture.images = fixture.audits = 0;
-    fixture.check = observation({ organ: "shoulder", side: "left", view: "AP" });
-    const pairedBody = { studyType: "Hombro", report: "Hombro izquierdo: tendinosis del supraespinoso con rotura parcial bursal de 6 × 3 mm. Hombro derecho sin hallazgos.", studyLaterality: "Izquierda" };
-    const paired = await Promise.all([run({ ...pairedBody, audience: "patient" }), run({ ...pairedBody, audience: "clinician" })]);
-    assert.ok(paired.every(r => r.result.success));
-    assert.equal(fixture.images, 1, "simultaneous patient/clinician versions share the same anatomy");
-    assert.equal(fixture.audits, 1);
+    fixture.check = observation({ side: "left", view: "AP" });
+    const longBody = { studyType: "Hombro", studyLaterality: "Izquierda", report: "TÉCNICA:\n" + "Descripción extensa ficticia. ".repeat(140) + "\nHALLAZGOS:\nHombro izquierdo: rotura parcial bursal de 6 × 3 mm." };
+    const both = await Promise.all([run({ ...longBody, audience: "patient" }), run({ ...longBody, audience: "clinician" })]);
+    assert.ok(both.every(r => r.result.success && r.result.copyPlanUsed));
+    const tooLong = { ...briefPlan, callouts: [{ label: "Lesión", detail: "x".repeat(121) + " sin rotura completa" }] };
+    fixture.plans = fixture.images = 0;
+    fixture.planQueue = [tooLong, briefPlan];
+    assert.equal((await run(longBody)).result.success, true);
+    assert.equal(fixture.plans, 2, "one automatic retry for a malformed or overlong script");
+    assert.equal(fixture.images, 1, "image credits are not spent on an invalid script");
+    fixture.plans = fixture.images = 0;
+    fixture.planQueue = [tooLong, tooLong];
+    const invalidScript = await run(longBody);
+    assert.equal(invalidScript.code, 502);
+    assert.equal(fixture.plans, 2);
+    assert.equal(fixture.images, 0);
     const missing = await run({ studyType: "Hombro", report: "Tendinosis sintética, lado sin documentar." });
     assert.equal(missing.code, 400);
     fixture.audits = 0;

@@ -69,7 +69,8 @@ export type MskImageContract = {
   side: "right" | "left" | "bilateral";
   view: MskView;
   clinicalSite: string;
-  format?: "atlas" | "infographic" | "anatomy";
+  format?: "atlas" | "infographic";
+  expectedCopy?: string;
 };
 
 export function buildMskLandmarkBrief(contract: MskImageContract): string {
@@ -106,9 +107,9 @@ export function acceptsMskVisualCheck(result: any, contract: MskImageContract): 
       result.panels.every((panel: any) => (panel?.anatomicalSide === "right" || panel?.anatomicalSide === "left") &&
         acceptsMskVisualCheck(panel, { ...contract, side: panel.anatomicalSide }));
   }
-  if (contract.format === "anatomy" && (result?.visibleTextAbsent !== true || result?.noUnsupportedFindings !== true)) return false;
   if (contract.format === "infographic" &&
-      (result?.textMatchesClinicalSource !== true || result?.productionInstructionsAbsent !== true)) return false;
+      (result?.textMatchesClinicalSource !== true || result?.productionInstructionsAbsent !== true ||
+        result?.textLegibleAndCorrect !== true)) return false;
   const lateral = (contract.side === "right") === (contract.view === "AP") ? "left" : "right";
   const medial = lateral === "left" ? "right" : "left";
   return result?.anatomicalSide === contract.side && result?.view === contract.view &&
@@ -131,8 +132,8 @@ export async function generateCheckedMskImage(args: {
     let result: unknown;
     try {
       result = await args.inspect(imageUrl, `Audit the DRAWN ANATOMY, not the title or R/L labels. ${brief}
-Classify the predominant front/back view as AP/PA. Small obliquity or a cutaway is not itself a failure when both medial/lateral bony landmarks remain clearly visible in their required positions and establish the side. If the drawing is a lateral view, an isolated ambiguous crop, or its landmarks do not establish the side, return unknown and false. For clinicalSiteMatches inspect the drawn lesion location and internal/external compartment and anterior/body/posterior position, not merely the caption. A regional overview need not show every finding; assess the site actually depicted against the clinical source. Inspect EVERY anatomical close-up/inset, including small comparison illustrations: allPanelsConsistent is false if any inset contradicts its side label, swaps the side/site, or cannot be oriented. Do not approve based only on the largest illustration. Full-body silhouettes are orientation references; check that their highlighted side agrees. Explain evidence for each inset in observations. ${args.contract.format === "infographic" ? 'Also read EVERY visible text line against the clinical source: textMatchesClinicalSource=false for any unsupported normal/abnormal finding, altered measurement, or omitted/changed qualifier (including partial vs complete or bursal vs articular). productionInstructionsAbsent=false if any camera/layout/prompt instruction is printed (for example "Dibujar a la derecha del cuadro"). These are checks of source fidelity, not independent diagnosis.' : args.contract.format === "anatomy" ? 'Inspect the entire image for text: visibleTextAbsent must be false if there are any letters, words, captions, measurements, numbers or labels anywhere. The application typesets all clinical copy separately. Set noUnsupportedFindings=false if any additional pathology is depicted without support in the source (including reactive bursal inflammation/thickening or effusion inferred merely from the word bursal). Normal surrounding anatomy as orientation context is allowed. No independent diagnosis is requested.' : 'The atlas image must remain unlabeled anatomical CGI. No diagnosis is requested.'}
-Return ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment object per anatomical panel]}. Both sides must be assessed separately. Assessment object schema:' : 'JSON with schema:'} {"anatomicalSide":"right|left|unknown","view":"AP|PA|unknown","lateralLandmarkPosition":"left|right|unknown","medialLandmarkPosition":"left|right|unknown","landmarksVisible":boolean,"clinicalSiteMatches":boolean,"allPanelsConsistent":boolean,${args.contract.format === "infographic" ? '"textMatchesClinicalSource":boolean,"productionInstructionsAbsent":boolean,' : args.contract.format === "anatomy" ? '"visibleTextAbsent":boolean,"noUnsupportedFindings":boolean,' : ''}"observations":["Visible anatomical evidence"]}.`);
+Classify the predominant front/back view as AP/PA. Small obliquity or a cutaway is not itself a failure when both medial/lateral bony landmarks remain clearly visible in their required positions and establish the side. If the drawing is a lateral view, an isolated ambiguous crop, or its landmarks do not establish the side, return unknown and false. For clinicalSiteMatches inspect the drawn lesion location and internal/external compartment and anterior/body/posterior position, not merely the caption. A regional overview need not show every finding; assess the site actually depicted against the clinical source. Inspect EVERY anatomical close-up/inset, including small comparison illustrations: allPanelsConsistent is false if any inset contradicts its side label, swaps the side/site, or cannot be oriented. Do not approve based only on the largest illustration. Full-body silhouettes are orientation references; check that their highlighted side agrees. Explain evidence for each inset in observations. ${args.contract.format === "infographic" ? 'Also read EVERY visible text line against the clinical source. Set textLegibleAndCorrect=false for spelling mistakes, malformed or illegible words, truncated labels or measurements; use false if uncertain: textMatchesClinicalSource=false for any unsupported normal/abnormal finding, altered measurement, or omitted/changed qualifier (including partial vs complete or bursal vs articular). productionInstructionsAbsent=false if any camera/layout/prompt instruction is printed (for example "Dibujar a la derecha del cuadro"). This must be a brief visual summary with short callouts, not a transcription of the full report. Check the planned visible text below when provided. These are checks of source fidelity, not independent diagnosis.' : 'The atlas image must remain unlabeled anatomical CGI. No diagnosis is requested.'}
+${args.contract.format === "infographic" && args.contract.expectedCopy ? `PLANNED VISIBLE TEXT (only the title/callout/footer strings, never print the instructions):\n${args.contract.expectedCopy}` : ""}\nReturn ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment object per anatomical panel]}. Both sides must be assessed separately. Assessment object schema:' : 'JSON with schema:'} {"anatomicalSide":"right|left|unknown","view":"AP|PA|unknown","lateralLandmarkPosition":"left|right|unknown","medialLandmarkPosition":"left|right|unknown","landmarksVisible":boolean,"clinicalSiteMatches":boolean,"allPanelsConsistent":boolean,${args.contract.format === "infographic" ? '"textMatchesClinicalSource":boolean,"productionInstructionsAbsent":boolean,"textLegibleAndCorrect":boolean,' : ''}"observations":["Visible anatomical evidence"]}.`);
       if (typeof result === "string") result = extractJsonObject(result);
     } catch {
       // Provider failure is not evidence that an image is correct.
@@ -143,8 +144,7 @@ Return ${args.contract.side === "bilateral" ? 'JSON {"panels":[one assessment ob
     }
     // Feed back only fixed check names, never model observations or clinical data.
     const checks = ["anatomicalSide", "view", "lateralLandmarkPosition", "medialLandmarkPosition", "landmarksVisible", "clinicalSiteMatches", "allPanelsConsistent"];
-    if (args.contract.format === "anatomy") checks.push("visibleTextAbsent", "noUnsupportedFindings");
-    if (args.contract.format === "infographic") checks.push("textMatchesClinicalSource", "productionInstructionsAbsent");
+    if (args.contract.format === "infographic") checks.push("textMatchesClinicalSource", "productionInstructionsAbsent", "textLegibleAndCorrect");
     const expected = { anatomicalSide: args.contract.side, view: args.contract.view,
       lateralLandmarkPosition: (args.contract.side === "right") === (args.contract.view === "AP") ? "left" : "right",
       medialLandmarkPosition: (args.contract.side === "right") === (args.contract.view === "AP") ? "right" : "left" };
