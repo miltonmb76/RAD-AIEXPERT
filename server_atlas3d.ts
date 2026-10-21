@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import { resolveFocalPlanePair } from "./src/lib/focalPlanePair";
 import { extractJsonObject } from "./src/lib/reasoningChain";
 import { ensureBreastSuiteFichaFields } from "./src/lib/breastSuiteFicha";
+import { generateCheckedMskImage, generateMskPlan, hasMskSideConflict, resolveMskLaterality, mskSideLabel, detectMskView, type MskOrgan } from "./src/lib/mskImageLaterality";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -280,7 +281,8 @@ function detectKneePatientSide(
 function buildKneeMeniscusPin(
   kneeSide: "right" | "left" | "unknown",
   compartment: "medial" | "lateral" | "unknown",
-  horn: "anterior" | "body" | "posterior" | "unknown" = "unknown"
+  horn: "anterior" | "body" | "posterior" | "unknown" = "unknown",
+  view: "AP" | "PA" = "AP"
 ): string {
   if (compartment === "unknown" && horn === "unknown") return "";
 
@@ -298,9 +300,10 @@ function buildKneeMeniscusPin(
   let compartmentBlock = "";
   if (compartment === "lateral") {
     const viewerHalf =
-      kneeSide === "right"
+      kneeSide === "unknown" ? "the anatomical compartment (screen position unspecified)" :
+      (kneeSide === "right") === (view === "AP")
         ? "VIEWER'S LEFT of frame (next to fibular head)"
-        : kneeSide === "left"
+        : kneeSide !== "unknown"
           ? "VIEWER'S RIGHT of frame (next to fibular head)"
           : "the FIBULAR half of the joint (next to fibular head)";
     compartmentBlock =
@@ -309,9 +312,10 @@ function buildKneeMeniscusPin(
       `CRITICAL FAIL if lesion is drawn on the tibial/medial side (INTERNAL meniscus). `;
   } else if (compartment === "medial") {
     const viewerHalf =
-      kneeSide === "right"
+      kneeSide === "unknown" ? "the anatomical compartment (screen position unspecified)" :
+      (kneeSide === "right") === (view === "AP")
         ? "VIEWER'S RIGHT of frame (tibial / opposite the fibula)"
-        : kneeSide === "left"
+        : kneeSide !== "unknown"
           ? "VIEWER'S LEFT of frame (tibial / opposite the fibula)"
           : "the TIBIAL half of the joint (OPPOSITE the fibular head)";
     compartmentBlock =
@@ -320,12 +324,8 @@ function buildKneeMeniscusPin(
       `CRITICAL FAIL if lesion is drawn next to the fibula (that would be EXTERNAL/lateral). `;
   }
 
-  const apMap =
-    kneeSide === "right"
-      ? "RIGHT knee AP map: lateral/fibula = VIEWER LEFT; medial/tibial = VIEWER RIGHT. "
-      : kneeSide === "left"
-        ? "LEFT knee AP map: lateral/fibula = VIEWER RIGHT; medial/tibial = VIEWER LEFT. "
-        : "AP map: fibular head locks the EXTERNAL compartment. ";
+  const apMap = kneeSide === "unknown" ? "Do not infer a patient side from the compartment. "
+    : `${kneeSide.toUpperCase()} knee ${view} map: lateral/fibula = VIEWER ${(kneeSide === "right") === (view === "AP") ? "LEFT" : "RIGHT"}; medial/tibial = VIEWER ${(kneeSide === "right") === (view === "AP") ? "RIGHT" : "LEFT"}. `;
 
   return (
     `KNEE MENISCUS COMPARTMENT PIN (CRITICAL): ${sideLabel}. ${compartmentBlock}` +
@@ -370,6 +370,7 @@ function resolveKneeMeniscusTarget(args: {
   panelTitle?: string;
   laterality?: string;
   findingStructures?: string[];
+  view?: "AP" | "PA";
 }): {
   kneeSide: "right" | "left" | "unknown";
   compartment: "medial" | "lateral" | "unknown";
@@ -377,32 +378,39 @@ function resolveKneeMeniscusTarget(args: {
   pin: string;
   siteLabel: string;
 } {
-  const clinical = [
-    args.userDirective,
-    args.customDirectives,
-    args.reportText,
-    ...(args.findingStructures || []),
-  ];
+  const clinical = [args.userDirective, args.customDirectives, args.reportText].filter(Boolean) as string[];
+  const clauses = clinical.flatMap((text) => text.split(/[.;\n]+/)).filter(Boolean);
   const panelBag = [args.structureOrSite, args.anatomicalFocus, args.panelTitle];
-  let compartment = detectKneeMeniscusCompartment(...clinical);
-  if (compartment === "unknown") compartment = detectKneeMeniscusCompartment(...panelBag);
-  let horn = detectKneeMeniscusHorn(...clinical);
-  if (horn === "unknown") horn = detectKneeMeniscusHorn(...panelBag);
-  const kneeSide = detectKneePatientSide(
-    args.userDirective,
-    args.laterality,
-    args.customDirectives,
-    args.structureOrSite,
-    args.reportText,
-    args.anatomicalFocus
-  );
+  const oneCompartment = (text: string): "medial" | "lateral" | "unknown" => {
+    const lateral = /menisco\s+(?:externo|lateral)|(?:external|lateral)\s+meniscus/i.test(text);
+    const medial = /menisco\s+(?:interno|medial)|(?:internal|medial)\s+meniscus/i.test(text);
+    return lateral && medial ? "unknown" : detectKneeMeniscusCompartment(text);
+  };
+  const compartments = new Set(clauses.map(oneCompartment).filter((c) => c !== "unknown"));
+  const panelCompartment = oneCompartment(panelBag.filter(Boolean).join(" "));
+  // Multiple compartments in a report must not all inherit the first meniscus.
+  let compartment: "medial" | "lateral" | "unknown" = "unknown";
+  for (const directive of [args.userDirective, args.customDirectives]) {
+    const value = oneCompartment(directive || "");
+    if (value !== "unknown") { compartment = value; break; }
+  }
+  if (compartment === "unknown" && compartments.size === 1) compartment = [...compartments][0];
+  if (compartment === "unknown" && compartments.has(panelCompartment as "medial" | "lateral")) compartment = panelCompartment;
+  const scopedClauses = clauses.filter((text) => compartment !== "unknown" && oneCompartment(text) === compartment);
+  const horns = new Set(scopedClauses.map((text) => {
+    if (/cuerno\s+posterior|posterior\s+horn/i.test(text) && /cuerno\s+anterior|anterior\s+horn/i.test(text)) return "unknown";
+    return detectKneeMeniscusHorn(text);
+  }).filter((h) => h !== "unknown"));
+  const horn = horns.size === 1 ? [...horns][0] : "unknown";
+  const side = resolveMskLaterality(args.userDirective, args.laterality, args.customDirectives, args.reportText);
+  const kneeSide = side === "right" || side === "left" ? side : "unknown";
   const siteLabel = lockKneeMeniscusSiteLabel(
     kneeSide,
     compartment,
     horn,
     args.structureOrSite || ""
   );
-  const pin = buildKneeMeniscusPin(kneeSide, compartment, horn);
+  const pin = buildKneeMeniscusPin(kneeSide, compartment, horn, args.view);
   return { kneeSide, compartment, horn, pin, siteLabel };
 }
 
@@ -581,8 +589,8 @@ const WRIST_TOPOGRAPHY_RULES_ES =
 
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
   const v = String(view || "").toLowerCase();
-  if (/posterior|dorsal|espalda|back view|from behind|viewed from behind/.test(v)) return "posterior";
-  if (/ap\b|pa\b|coronal|anterior|frontal|frente|palmar|ventral|face[- ]?on|facing/.test(v)) return "anterior";
+  if (/\bpa\b|posterior|dorsal|espalda|back view|from behind|viewed from behind/.test(v)) return "posterior";
+  if (/\bap\b|coronal|anterior|frontal|frente|palmar|ventral|face[- ]?on|facing/.test(v)) return "anterior";
   // Atlas / Focal clinical default is AP-like (patient facing observer).
   return "anterior";
 }
@@ -1668,6 +1676,29 @@ export function registerAtlas3DRoutes(app: express.Express) {
       if (!b64) throw new Error("Fallback imagen-3.0 no devolvió imagen.");
       return `data:image/jpeg;base64,${b64}`;
     }
+  }
+
+  // Check actual pixels against clinical laterality, rather than trusting a title.
+  async function generateMskMedicalImage(ai: any, prompt: string, organ: MskOrgan, laterality: string, clinicalSite: string): Promise<string> {
+    const side = resolveMskLaterality(laterality);
+    if (side === "unspecified") {
+      throw new Error("Selecciona el lado derecho o izquierdo de este panel antes de generar la imagen.");
+    }
+    const checked = await generateCheckedMskImage({
+      contract: { organ, side, view: detectMskView(prompt), clinicalSite },
+      generate: (feedback) => generateMedicalImage(ai, `${feedback}\n${prompt}\n${feedback}`),
+      inspect: async (imageUrl, instruction) => {
+        const image = stripDataUrl(imageUrl);
+        if (!image) throw new Error("Invalid image");
+        const response = await ai.models.generateContent({
+          model: getModelName(),
+          contents: { parts: [{ text: instruction }, { inlineData: { mimeType: image.mime, data: image.data } }] },
+          config: { responseMimeType: "application/json", temperature: 0 },
+        });
+        return String(response.text || "");
+      },
+    });
+    return checked.imageUrl;
   }
 
   type BreastClockQaResult = {
@@ -5925,6 +5956,7 @@ RESPONDE EN JSON:
         return res.status(400).json({ success: false, error: "Se requiere el texto del informe de hombro." });
       }
 
+      const clinicalLaterality = mskSideLabel(resolveMskLaterality(laterality, customDirectives, reportText));
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
@@ -5935,7 +5967,7 @@ Tu misión es analizar el informe de ecografía de hombro adjunto para estructur
 INFORMACIÓN DEL ESTUDIO DE HOMBRO:
 ========================================================================
 - Tipo de Estudio Sugerido / Seleccionado: "${shoulderType || "Detectar automáticamente del informe"}"
-- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- Lateralidad Solicitada: "${clinicalLaterality || "Detectar del informe; nunca asumir derecha"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard manguito / radar biomecánico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
 IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, tendones afectados, grosor/gap, bursitis, pinzamiento, lateralidad y la tabla del manguito. No inventes roturas ni grados ausentes en la directiva/informe.
 - INFORME ECOGRÁFICO DE HOMBRO:
@@ -6002,9 +6034,9 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     {
       "panelLetter": "A",
       "panelTitle": "Panel A: Anatomía del hombro afectado — vista de conjunto",
-      "tendonOrSite": "Hombro derecho — visión general",
+      "tendonOrSite": "Hombro del lado documentado — visión general",
       "anatomicalFocus": "Acromion, cabeza humeral, deltoides y trayecto del manguito...",
-      "laterality": "Derecha",
+      "laterality": "Lado documentado en el informe",
       "panelRole": "overview",
       "imagePrompt": "Ultra-realistic 3D medical shoulder anatomy render..."
     },
@@ -6013,16 +6045,16 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "panelTitle": "Panel B: Corte del supraespinoso — patología dominante",
       "tendonOrSite": "Supraespinoso",
       "anatomicalFocus": "Detalle de tendón supraespinoso con patrón ecográfico correlacionado...",
-      "laterality": "Derecha",
+      "laterality": "Lado documentado en el informe",
       "panelRole": "cuff",
       "imagePrompt": "Ultra-realistic 3D medical rotator cuff cutaway render..."
     }
   ],
   "findingTable": [
     {
-      "location": "Hombro derecho, cara anterolateral",
+      "location": "Hombro del lado documentado, cara anterolateral",
       "structure": "Supraespinoso",
-      "thicknessOrGap": "5,2 mm (sin gap)",
+      "thicknessOrGap": "Medida documentada o cadena vacía",
       "echoPattern": "Tendinosis hipoecoica sin solución de continuidad",
       "bursalStatus": "Bursa SAD sin distensión significativa",
       "dynamicFinding": "Pinzamiento leve en arco medio",
@@ -6038,84 +6070,39 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
   "morphologicalSynthesis": "El estudio ecográfico del hombro evidencia..."
 }`;
 
-      const planResponse = await ai.models.generateContent({
-        model: model,
-        contents: [{ text: shoulderPrompt }],
-        config: { responseMimeType: "application/json" }
-      });
-
-      let planJson: any = {};
+      let planJson: any;
       try {
-        planJson = JSON.parse(planResponse.text || "{}");
-      } catch (parseErr) {
-        console.error("Error parseando plan JSON Shoulder 3D:", parseErr);
-        planJson = {
-          studyTypeCategory: shoulderType || "hombro_manguito",
-          territoryLabel: "ECOGRAFÍA DE HOMBRO",
-          laterality: laterality || "Derecha",
-          figureTitle: "FIGURA 1. ATLAS 3D HOMBRO Y CORRELACIÓN MANGUITO ROTADOR",
-          tableTitle: "TABLA ECOGRÁFICA DEL MANGUITO ROTADOR Y ESTRUCTURAS PERIARTICULARES:",
-          tableHeaders: {
-            col1: "LOCALIZACIÓN",
-            col2: "ESTRUCTURA",
-            col3: "GROSOR / GAP",
-            col4: "PATRÓN ECO",
-            col5: "BURSA",
-            col6: "DINÁMICA",
-            col7: "SEVERIDAD",
-            col8: "IMPACTO"
-          },
-          panels: [
-            {
-              panelLetter: "A",
-              panelTitle: "Panel A: Anatomía del hombro — visión de conjunto",
-              tendonOrSite: "Hombro — overview",
-              anatomicalFocus: "Reconstrucción anatómica del hombro con manguito rotador.",
-              laterality: laterality || "Derecha",
-              panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical shoulder anatomy render showing acromion, humeral head, deltoid and rotator cuff footprint, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
-            },
-            {
-              panelLetter: "B",
-              panelTitle: "Panel B: Corte del manguito — supraespinoso",
-              tendonOrSite: "Supraespinoso",
-              anatomicalFocus: "Corte macro del tendón supraespinoso según hallazgos del informe.",
-              laterality: laterality || "Derecha",
-              panelRole: "cuff",
-              imagePrompt: "Ultra-realistic 3D medical rotator cuff cutaway of supraspinatus tendon, fibrillar pattern, cinema 4D octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
-            }
-          ],
-          findingTable: [],
-          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DEL MANGUITO:",
-          morphologicalSynthesis: "La correlación anatomopatológica del manguito rotador se basa en los hallazgos descritos en el informe."
-        };
+        planJson = await generateMskPlan(resolveMskLaterality(clinicalLaterality), async (feedback) => {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [{ text: `${shoulderPrompt}\n${feedback}` }],
+            config: { responseMimeType: "application/json" },
+          });
+          return String(response.text || "");
+        });
+      } catch (error: any) {
+        return res.status(502).json({ success: false, error: handleGeminiError(error) });
       }
 
       const shoulderPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
+          const panelLat = clinicalLaterality && clinicalLaterality !== "Bilateral"
+            ? clinicalLaterality : mskSideLabel(resolveMskLaterality(panel.laterality));
           let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical shoulder / rotator cuff render of ${panel.tendonOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
-          {
-            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
-            if (panel.laterality && panel.laterality !== "auto") {
-              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
-            } else {
-              promptToUse = `${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
-            }
-          }
 
           const defaultRole = idx === 0 ? "overview" : idx === 1 ? "cuff" : "biceps_bursae";
           try {
-            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            const imageUrl = await generateMskMedicalImage(ai, promptToUse, "shoulder", panelLat, [customDirectives, reportText].filter(Boolean).join("\n"));
             return {
               id: `shoulder-panel-${idx}-${Date.now()}`,
               panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
               panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
               tendonOrSite: panel.tendonOrSite || panel.panelTitle || "",
               anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica del hombro y manguito rotador",
-              laterality: panel.laterality || planJson.laterality || laterality || "",
+              laterality: panelLat || "",
               imageUrl: imageUrl,
               promptUsed: promptToUse,
               isCustomFlipped: false,
@@ -6129,8 +6116,9 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
               tendonOrSite: panel.tendonOrSite || panel.panelTitle || "",
               anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica del hombro y manguito rotador",
-              laterality: panel.laterality || planJson.laterality || laterality || "",
+              laterality: panelLat || "",
               imageUrl: "",
+              imageError: (imgErr as Error)?.message || "No se pudo comprobar la anatomía.",
               promptUsed: promptToUse,
               isCustomFlipped: false,
               panelRole: panel.panelRole || defaultRole
@@ -6153,7 +6141,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       const finalShoulderData = {
         studyTypeCategory: planJson.studyTypeCategory || shoulderType || "hombro_manguito",
         territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE HOMBRO",
-        laterality: planJson.laterality || laterality || "Derecha",
+        laterality: clinicalLaterality || "",
         figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D HOMBRO Y CORRELACIÓN MANGUITO ROTADOR",
         tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DEL MANGUITO ROTADOR Y ESTRUCTURAS PERIARTICULARES:",
         tableHeaders: forcedHeaders,
@@ -6195,6 +6183,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         return res.status(400).json({ success: false, error: "Se requiere el panel shoulder a regenerar." });
       }
 
+      const clinicalLaterality = mskSideLabel(resolveMskLaterality(userDirective, laterality, customDirectives, reportText, panel.laterality));
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
@@ -6206,7 +6195,7 @@ DATOS DEL CASO:
 - Tendón / sitio: "${panel.tendonOrSite || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Rol del panel: "${panel.panelRole || ""}"
-- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Lateralidad requerida: "${clinicalLaterality}"
 - Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica del manguito"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
@@ -6242,6 +6231,11 @@ RESPONDE EN JSON:
         };
       }
 
+      if ([refineJson.panelTitle, refineJson.tendonOrSite, refineJson.structureOrSite].some((value) =>
+        hasMskSideConflict(value, resolveMskLaterality(clinicalLaterality)))) {
+        return res.status(502).json({ success: false, error: "El nuevo panel contradice el lado del estudio. Se conservó el panel anterior; vuelve a generar." });
+      }
+
       let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro shoulder rotator cuff render of ${panel.panelTitle}, no text.`;
       if (customDirectives && String(customDirectives).trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
@@ -6249,24 +6243,19 @@ RESPONDE EN JSON:
       if (userDirective && userDirective.trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
       }
-      if (laterality && laterality !== "auto") {
-        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
-      } else {
-        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
-      }
 
-      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const imageUrl = await generateMskMedicalImage(ai, finalPrompt, "shoulder", clinicalLaterality, [userDirective, customDirectives, reportText].filter(Boolean).join("\n"));
 
       const updatedPanel = {
         ...panel,
         panelTitle: refineJson.panelTitle || panel.panelTitle,
         tendonOrSite: refineJson.tendonOrSite || panel.tendonOrSite,
         anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
-        laterality: laterality || panel.laterality,
+        laterality: clinicalLaterality,
         imageUrl: imageUrl,
         promptUsed: finalPrompt,
+        imageError: undefined,
         isCustomFlipped: false
       };
 
@@ -6289,6 +6278,7 @@ RESPONDE EN JSON:
         return res.status(400).json({ success: false, error: "Se requiere el texto del informe de rodilla." });
       }
 
+      const clinicalLaterality = mskSideLabel(resolveMskLaterality(laterality, customDirectives, reportText));
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
@@ -6299,7 +6289,7 @@ Tu misión es analizar el informe de ecografía de rodilla adjunto para estructu
 INFORMACIÓN DEL ESTUDIO DE RODILLA:
 ========================================================================
 - Tipo de Estudio Sugerido / Seleccionado: "${kneeType || "Detectar automáticamente del informe"}"
-- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- Lateralidad Solicitada: "${clinicalLaterality || "Detectar del informe; nunca asumir derecha"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard ligamentos-meniscos / radar biomecánico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
 IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, meniscos/ligamentos afectados, grosor/extrusión/gap, derrame, dinámica, lateralidad y la tabla del ligamentos-meniscos. No inventes roturas ni grados ausentes en la directiva/informe.
 - INFORME ECOGRÁFICO DE RODILLA:
@@ -6380,7 +6370,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "panelTitle": "Panel A: Anatomía de la rodilla afectado — vista de conjunto",
       "structureOrSite": "Rodilla derecho — visión general",
       "anatomicalFocus": "Cóndilos femorales, rótula, platillos tibiales, meniscos y colaterales...",
-      "laterality": "Derecha",
+      "laterality": "Lado documentado en el informe",
       "panelRole": "overview",
       "imagePrompt": "Ultra-realistic 3D medical knee anatomy render..."
     },
@@ -6389,16 +6379,16 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "panelTitle": "Panel B: Corte meniscal — según informe (interno/externo + cuerno)",
       "structureOrSite": "Menisco externo/lateral (peroné), cuerno posterior — EJEMPLO; usar el del informe",
       "anatomicalFocus": "Detalle del menisco indicado (interno=tibial / externo=peroné) y cuerno exacto; NUNCA intercambiar...",
-      "laterality": "Derecha",
+      "laterality": "Lado documentado en el informe",
       "panelRole": "meniscus_ligament",
       "imagePrompt": "Ultra-realistic 3D medical knee ligaments-menisci cutaway render..."
     }
   ],
   "findingTable": [
     {
-      "location": "Rodilla derecha",
+      "location": "Rodilla del lado documentado",
       "structure": "Menisco externo/lateral (peroné), cuerno posterior — EJEMPLO; copiar del informe",
-      "thicknessOrGap": "5,2 mm (sin gap)",
+      "thicknessOrGap": "Medida documentada o cadena vacía",
       "echoPattern": "Rotura/degeneración según informe",
       "effusionStatus": "Sin derrame articular significativo",
       "dynamicFinding": "Según informe",
@@ -6414,57 +6404,18 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
   "morphologicalSynthesis": "El estudio ecográfico de la rodilla evidencia..."
 }`;
 
-      const planResponse = await ai.models.generateContent({
-        model: model,
-        contents: [{ text: kneePrompt }],
-        config: { responseMimeType: "application/json" }
-      });
-
-      let planJson: any = {};
+      let planJson: any;
       try {
-        planJson = JSON.parse(planResponse.text || "{}");
-      } catch (parseErr) {
-        console.error("Error parseando plan JSON Shoulder 3D:", parseErr);
-        planJson = {
-          studyTypeCategory: kneeType || "rodilla_ligamentos",
-          territoryLabel: "ECOGRAFÍA DE RODILLA",
-          laterality: laterality || "Derecha",
-          figureTitle: "FIGURA 1. ATLAS 3D RODILLA Y CORRELACIÓN LIGAMENTOS Y MENISCOS",
-          tableTitle: "TABLA ECOGRÁFICA DEL LIGAMENTOS Y MENISCOS Y ESTRUCTURAS PERIARTICULARES:",
-          tableHeaders: {
-            col1: "LOCALIZACIÓN",
-            col2: "ESTRUCTURA",
-            col3: "GROSOR / GAP",
-            col4: "PATRÓN ECO",
-            col5: "DERRAME",
-            col6: "DINÁMICA",
-            col7: "SEVERIDAD",
-            col8: "IMPACTO"
-          },
-          panels: [
-            {
-              panelLetter: "A",
-              panelTitle: "Panel A: Anatomía de la rodilla — visión de conjunto",
-              structureOrSite: "Rodilla — overview",
-              anatomicalFocus: "Reconstrucción anatómica de la rodilla con ligamentos y meniscos.",
-              laterality: laterality || "Derecha",
-              panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical knee anatomy render showing cóndilo femoral, patella, quadriceps and knee ligaments-menisci footprint, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
-            },
-            {
-              panelLetter: "B",
-              panelTitle: "Panel B: Corte meniscal — según informe (medial/lateral + A/P)",
-              structureOrSite: "Menisco (medial=tibial / lateral=peroné) — cuerno según informe",
-              anatomicalFocus: "Corte macro del menisco indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
-              laterality: laterality || "Derecha",
-              panelRole: "meniscus_ligament",
-              imagePrompt: "Ultra-realistic 3D medical knee meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
-            }
-          ],
-          findingTable: [],
-          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE RODILLA:",
-          morphologicalSynthesis: "La correlación anatomopatológica del ligamentos y meniscos se basa en los hallazgos descritos en el informe."
-        };
+        planJson = await generateMskPlan(resolveMskLaterality(clinicalLaterality), async (feedback) => {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [{ text: `${kneePrompt}\n${feedback}` }],
+            config: { responseMimeType: "application/json" },
+          });
+          return String(response.text || "");
+        });
+      } catch (error: any) {
+        return res.status(502).json({ success: false, error: handleGeminiError(error) });
       }
 
       const findingStructures = (planJson.findingTable || planJson.lesionTable || []).map(
@@ -6474,8 +6425,10 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const kneePanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          const panelLat = panel.laterality || planJson.laterality || laterality || "";
+          const panelLat = clinicalLaterality && clinicalLaterality !== "Bilateral"
+            ? clinicalLaterality : mskSideLabel(resolveMskLaterality(panel.laterality));
           const target = resolveKneeMeniscusTarget({
+            view: detectMskView(panel.imagePrompt || ""),
             customDirectives,
             reportText: reportSlice,
             structureOrSite: panel.structureOrSite,
@@ -6495,14 +6448,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
-          {
-            const screenMap = buildScreenLateralityConstraint(panelLat, "AP / coronal");
-            if (panelLat && panelLat !== "auto") {
-              promptToUse = `[MANDATORY PATIENT LATERALITY: ${String(panelLat).toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
-            } else {
-              promptToUse = `${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
-            }
-          }
+
           if (target.pin) {
             promptToUse = `${target.pin} ${promptToUse} FINAL CHECK: ${target.pin}`;
           }
@@ -6528,11 +6474,11 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             meniscusHorn: target.horn !== "unknown" ? target.horn : undefined,
           };
           try {
-            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            const imageUrl = await generateMskMedicalImage(ai, promptToUse, "knee", panelLat, [customDirectives, reportText].filter(Boolean).join("\n"));
             return { ...panelPayload, imageUrl };
           } catch (imgErr) {
             console.error(`Error generando imagen para panel knee ${panel.panelLetter}:`, imgErr);
-            return { ...panelPayload, imageUrl: "" };
+            return { ...panelPayload, imageUrl: "", imageError: (imgErr as Error)?.message || "No se pudo comprobar la anatomía." };
           }
         })
       );
@@ -6551,7 +6497,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       const finalKneeData = {
         studyTypeCategory: planJson.studyTypeCategory || kneeType || "rodilla_ligamentos",
         territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE RODILLA",
-        laterality: planJson.laterality || laterality || "Derecha",
+        laterality: clinicalLaterality || "",
         figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D RODILLA Y CORRELACIÓN LIGAMENTOS Y MENISCOS",
         tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DEL LIGAMENTOS Y MENISCOS Y ESTRUCTURAS PERIARTICULARES:",
         tableHeaders: forcedHeaders,
@@ -6608,6 +6554,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         return res.status(400).json({ success: false, error: "Se requiere el panel knee a regenerar." });
       }
 
+      const clinicalLaterality = mskSideLabel(resolveMskLaterality(userDirective, laterality, customDirectives, reportText, panel.laterality));
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
@@ -6619,7 +6566,7 @@ DATOS DEL CASO:
 - Menisco / ligamento / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Rol del panel: "${panel.panelRole || ""}"
-- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Lateralidad requerida: "${clinicalLaterality}"
 - Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica del ligamentos-meniscos"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
@@ -6663,8 +6610,14 @@ RESPONDE EN JSON:
         };
       }
 
-      const lockedLat = laterality || panel.laterality || "";
+      if ([refineJson.panelTitle, refineJson.tendonOrSite, refineJson.structureOrSite].some((value) =>
+        hasMskSideConflict(value, resolveMskLaterality(clinicalLaterality)))) {
+        return res.status(502).json({ success: false, error: "El nuevo panel contradice el lado del estudio. Se conservó el panel anterior; vuelve a generar." });
+      }
+
+      const lockedLat = clinicalLaterality;
       const target = resolveKneeMeniscusTarget({
+        view: detectMskView(refineJson.imagePrompt || panel.promptUsed || ""),
         userDirective,
         customDirectives,
         reportText: String(reportText || "").slice(0, 2500),
@@ -6689,14 +6642,7 @@ RESPONDE EN JSON:
       if (userDirective && userDirective.trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
       }
-      {
-        const screenMap = buildScreenLateralityConstraint(lockedLat, "AP / coronal");
-        if (lockedLat && lockedLat !== "auto") {
-          finalPrompt = `[MANDATORY PATIENT LATERALITY: ${String(lockedLat).toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
-        } else {
-          finalPrompt = `${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
-        }
-      }
+
       if (target.pin) {
         finalPrompt = `${target.pin} ${finalPrompt} FINAL CHECK: ${target.pin}`;
       }
@@ -6706,7 +6652,7 @@ RESPONDE EN JSON:
         finalPrompt = finalPrompt.replace(/\blateral meniscus\b/gi, "MEDIAL (tibial) meniscus");
       }
 
-      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+      const imageUrl = await generateMskMedicalImage(ai, finalPrompt, "knee", clinicalLaterality, [userDirective, customDirectives, reportText].filter(Boolean).join("\n"));
 
       const updatedPanel = {
         ...panel,
@@ -6716,6 +6662,7 @@ RESPONDE EN JSON:
         laterality: lockedLat || panel.laterality,
         imageUrl: imageUrl,
         promptUsed: finalPrompt,
+        imageError: undefined,
         isCustomFlipped: false,
         meniscusCompartment: target.compartment !== "unknown" ? target.compartment : panel.meniscusCompartment,
         meniscusHorn: target.horn !== "unknown" ? target.horn : panel.meniscusHorn,

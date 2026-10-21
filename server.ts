@@ -41,6 +41,7 @@ import {
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
 import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
+import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, type MskImageContract } from "./src/lib/mskImageLaterality";
 import {
   INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
   redactPatientIdentifiersForInfographic,
@@ -1794,7 +1795,7 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       preferred: preferredView,
     });
     const reportForInfographic = redactPatientIdentifiersForInfographic(String(report || ""));
-    const lateralityExtract = extractInfographicLaterality({
+    let lateralityExtract = extractInfographicLaterality({
       report: reportForInfographic,
       studyType: String(studyType || ""),
       studyLaterality: String(studyLaterality || ""),
@@ -1811,6 +1812,21 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
     ]
       .filter(Boolean)
       .join("\n");
+    const mskOrgan = detectMskOrgan(String(studyType || "")) || detectMskOrgan(lateralityContextText);
+    const mskSide = resolveMskLaterality(correctionNotes, studyLaterality, studyType, reportForInfographic);
+    if (mskOrgan && mskSide === "unspecified") {
+      return res.status(400).json({ success: false, error: "Indica si el estudio de hombro o rodilla es derecho, izquierdo o bilateral antes de generar la infografía." });
+    }
+    const mskContract: MskImageContract | null = mskOrgan && mskSide !== "unspecified"
+      ? { organ: mskOrgan, side: mskSide, view: orientation,
+          clinicalSite: [correctionNotes, isDirected ? topicText : "", reportForInfographic].filter(Boolean).join("\n") }
+      : null;
+    if (mskContract) {
+      lateralityExtract = extractInfographicLaterality({
+        report: reportForInfographic, studyType: String(studyType || ""),
+        studyLaterality: mskSideLabel(mskSide), correctionNotes: String(correctionNotes || ""),
+      });
+    }
     const lateralityBlock = buildInfographicLateralityPromptBlock(
       orientation,
       lateralityExtract,
@@ -2019,11 +2035,11 @@ ${recoBlock}
 Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
-    const tryGenerate = async (aspectRatio: string, imageSize: string) => {
+    const tryGenerate = async (aspectRatio: string, imageSize: string, feedback = "") => {
       const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
         contents: {
-          parts: [{ text: promptText }],
+          parts: [{ text: `${feedback}\n${promptText}\n${feedback}` }],
         },
         config: {
           imageConfig: {
@@ -2044,32 +2060,44 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
     };
 
     // Prefer a vertical poster; fall back if the size/ratio is rejected.
-    let base64Image = "";
     const attempts: Array<[string, string]> = [
       ["3:4", "2K"],
       ["3:4", "1K"],
       ["4:5", "1K"],
       ["1:1", "1K"],
     ];
-    let lastError: any = null;
-    for (const [aspectRatio, imageSize] of attempts) {
-      try {
-        base64Image = await tryGenerate(aspectRatio, imageSize);
-        if (base64Image) break;
-      } catch (err) {
-        lastError = err;
-        console.warn(`Infografía paciente: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
+    const renderCandidate = async (feedback = "") => {
+      let lastError: any = null;
+      for (const [aspectRatio, imageSize] of attempts) {
+        try {
+          const base64Image = await tryGenerate(aspectRatio, imageSize, feedback);
+          if (base64Image) return `data:image/jpeg;base64,${base64Image}`;
+        } catch (err) {
+          lastError = err;
+          console.warn(`Infografía: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
+        }
       }
-    }
-
-    if (!base64Image) {
       if (lastError) throw lastError;
       throw new Error("No se pudo generar la imagen de la infografía.");
-    }
+    };
+    const imageUrl = mskContract ? (await generateCheckedMskImage({
+      contract: mskContract,
+      generate: renderCandidate,
+      inspect: async (candidate, instruction) => {
+        const match = candidate.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
+        if (!match) throw new Error("Invalid image");
+        const checked = await ai.models.generateContent({
+          model: getModelName(undefined),
+          contents: { parts: [{ text: instruction }, { inlineData: { mimeType: match[1], data: match[2] } }] },
+          config: { responseMimeType: "application/json", temperature: 0 },
+        });
+        return String(checked.text || "");
+      },
+    })).imageUrl : await renderCandidate();
 
     res.json({
       success: true,
-      imageUrl: `data:image/jpeg;base64,${base64Image}`,
+      imageUrl,
       viewOrientation: orientation,
       audience: audienceMode,
       mode: isDirected ? "directed" : "general",

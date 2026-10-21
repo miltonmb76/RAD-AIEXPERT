@@ -606,7 +606,7 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
                     ) : (
                       <div className="text-center p-4 text-slate-400">
                         <Activity className="w-8 h-8 mx-auto mb-1 text-slate-500 opacity-50" />
-                        <span className="text-xs">Render no disponible</span>
+                        <span className="text-xs" role="status">{String(panel.imageError || "Render no disponible")}</span>
                       </div>
                     )}
 
