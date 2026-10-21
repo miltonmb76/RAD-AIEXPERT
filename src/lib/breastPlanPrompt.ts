@@ -33,7 +33,8 @@ REGLAS ESPECÍFICAS MAMA / BI-RADS:
 - laterality por panel = lado anatómico del paciente (Derecha|Izquierda|Bilateral).
 - lesionTable filas con: location (reloj + distancia al pezón), composition (quística/sólida/mixta), size (mm/cm), shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
 - NUNCA intercambiar composition y size. size solo medidas (ej. "8 × 5 mm"); composition solo morfología (ej. "Composición documentada").
-- Incluir breastSummary, morphologyNotes, axillaryStatus, keyPoints[].
+- Cada panel DEBE tener panelTitle y anatomicalFocus en español, coherentes con su panelLetter. anatomicalFocus no debe quedar vacío: describe solo lo documentado o indica que faltan datos.
+- FICHA CLÍNICA MAMARIA — OBLIGATORIA: incluir SIEMPRE breastSummary, morphologyNotes, axillaryStatus y keyPoints[]. Resume los hallazgos documentados sin añadir diagnósticos. Si no hay datos de morfología o axilas, indícalo explícitamente; nunca deduzcas normalidad de la ausencia de datos.
 - No inventar lesiones ni categorías BI-RADS ausentes del informe/directiva.
 - Prompts de imagen en inglés, fotorrealismo anatómico femenino clínico, sin texto en la imagen.
 
@@ -89,6 +90,10 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "clinicalImpact": "Impacto documentado"
     }
   ],
+  "breastSummary": "Resumen de los hallazgos mamarios documentados",
+  "morphologyNotes": "Morfología documentada o indicación explícita de datos no disponibles",
+  "axillaryStatus": "Estado axilar documentado o indicación explícita de datos no disponibles",
+  "keyPoints": ["Punto clave sustentado en el informe"],
   "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
   "morphologicalSynthesis": "El estudio ecográfico mamario bilateral evidencia..."
 }`;

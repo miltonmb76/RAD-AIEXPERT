@@ -4,6 +4,8 @@ import express from "express";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { resolveFocalPlanePair } from "./src/lib/focalPlanePair";
+import { extractJsonObject } from "./src/lib/reasoningChain";
+import { ensureBreastSuiteFichaFields } from "./src/lib/breastSuiteFicha";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -5491,7 +5493,8 @@ RESPONDE EN JSON:
 
       let planJson: any = {};
       try {
-        planJson = JSON.parse(planResponse.text || "{}");
+        const rawPlan = String(planResponse.text || "");
+        planJson = extractJsonObject(rawPlan) || JSON.parse(rawPlan || "{}");
       } catch (parseErr) {
         console.error("Error parseando plan JSON Mama 3D:", parseErr);
         return res.status(502).json({
@@ -5637,7 +5640,76 @@ RESPONDE EN JSON:
         })
       );
 
-      const finalBreastData = {
+      const lesionTable = (planJson.lesionTable || planJson.noduleTable || []).map((row: any) => {
+        // Evitar invertir composición/tamaño si el modelo los cruza
+        const rawSize = String(row.size || "").trim();
+        const rawComposition = String(row.composition || row.shape || "").trim();
+        const looksLikeSize = (t: string) =>
+          /\d/.test(t) && /(mm|cm|≤|≥|<|>|×|x\s*\d)/i.test(t);
+        const looksLikeComposition = (t: string) =>
+          /(quíst|quist|sólid|solid|mixt|complej|espong|conserv|ganglion|oval|redond|irreg)/i.test(t);
+        let size = rawSize;
+        let composition = rawComposition;
+        if (looksLikeSize(rawComposition) && !looksLikeSize(rawSize)) {
+          size = rawComposition;
+          composition = rawSize || row.shape || "";
+        } else if (
+          looksLikeComposition(rawSize) &&
+          !looksLikeSize(rawSize) &&
+          looksLikeSize(rawComposition)
+        ) {
+          size = rawComposition;
+          composition = rawSize;
+        }
+        let location = String(row.location || "");
+        const rowLockedHour = resolveBreastLockedHour({
+          customDirectives,
+          reportText: reportClockSource,
+          clockPositionOrSite: location,
+        });
+        // Resolve each row independently; bilateral lesions may have different hours.
+        if (rowLockedHour != null) {
+          const rowHour = extractBreastClockHour(location);
+          if (rowHour != null && rowHour !== rowLockedHour) {
+            const rowSide = detectBreastClockSide(location, customDirectives, laterality, planJson.laterality);
+            location = lockBreastClockSiteLabel(
+              rowSide !== "unknown" ? rowSide : globalBreastSide,
+              rowLockedHour,
+              location
+            );
+          }
+        }
+        return {
+          location,
+          size: size || "",
+          composition: composition || row.shape || "",
+          shape: row.shape || composition || "",
+          margins: row.margins || "",
+          echogenicity: row.echogenicity || "",
+          orientation: row.orientation || row.echogenicFoci || "",
+          vascularity: row.vascularity || "",
+          biradsCategory: row.biradsCategory || row.tiradsCategory || "",
+          clinicalImpact: row.clinicalImpact || ""
+        };
+      });
+
+      // Ensure panel captions under images are never blank.
+      const panelsWithFocus = breastPanelsWithImages.map((p: any, idx: number) => {
+        const focus = String(p.anatomicalFocus || "").trim();
+        if (focus) return p;
+        const letter = p.panelLetter || String.fromCharCode(65 + idx);
+        const title = String(p.panelTitle || `Panel ${letter}`).trim();
+        const site = String(p.clockPositionOrSite || "").trim();
+        return {
+          ...p,
+          anatomicalFocus:
+            [title, site, "Correlación mamaria según el informe."]
+              .filter(Boolean)
+              .join(". "),
+        };
+      });
+
+      const finalBreastData = ensureBreastSuiteFichaFields({
         studyTypeCategory: planJson.studyTypeCategory || breastType || "mama_b_mode",
         territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE MAMAS",
         laterality: planJson.laterality || laterality || "Bilateral",
@@ -5654,66 +5726,15 @@ RESPONDE EN JSON:
           col8: "BI-RADS",
           col9: "IMPACTO"
         },
-        panels: breastPanelsWithImages,
-        lesionTable: (planJson.lesionTable || planJson.noduleTable || []).map((row: any) => {
-          // Evitar invertir composición/tamaño si el modelo los cruza
-          const rawSize = String(row.size || "").trim();
-          const rawComposition = String(row.composition || row.shape || "").trim();
-          const looksLikeSize = (t: string) =>
-            /\d/.test(t) && /(mm|cm|≤|≥|<|>|×|x\s*\d)/i.test(t);
-          const looksLikeComposition = (t: string) =>
-            /(quíst|quist|sólid|solid|mixt|complej|espong|conserv|ganglion|oval|redond|irreg)/i.test(t);
-          let size = rawSize;
-          let composition = rawComposition;
-          if (looksLikeSize(rawComposition) && !looksLikeSize(rawSize)) {
-            size = rawComposition;
-            composition = rawSize || row.shape || "";
-          } else if (
-            looksLikeComposition(rawSize) &&
-            !looksLikeSize(rawSize) &&
-            looksLikeSize(rawComposition)
-          ) {
-            size = rawComposition;
-            composition = rawSize;
-          }
-          let location = String(row.location || "");
-          const rowLockedHour = resolveBreastLockedHour({
-            customDirectives,
-            reportText: reportClockSource,
-            clockPositionOrSite: location,
-          });
-          // Resolve each row independently; bilateral lesions may have different hours.
-          if (rowLockedHour != null) {
-            const rowHour = extractBreastClockHour(location);
-            if (rowHour != null && rowHour !== rowLockedHour) {
-              const rowSide = detectBreastClockSide(location, customDirectives, laterality, planJson.laterality);
-              location = lockBreastClockSiteLabel(
-                rowSide !== "unknown" ? rowSide : globalBreastSide,
-                rowLockedHour,
-                location
-              );
-            }
-          }
-          return {
-            location,
-            size: size || "",
-            composition: composition || row.shape || "",
-            shape: row.shape || composition || "",
-            margins: row.margins || "",
-            echogenicity: row.echogenicity || "",
-            orientation: row.orientation || row.echogenicFoci || "",
-            vascularity: row.vascularity || "",
-            biradsCategory: row.biradsCategory || row.tiradsCategory || "",
-            clinicalImpact: row.clinicalImpact || ""
-          };
-        }),
+        panels: panelsWithFocus,
+        lesionTable,
         breastSummary: planJson.breastSummary || "",
         morphologyNotes: planJson.morphologyNotes || "",
         axillaryStatus: planJson.axillaryStatus || "",
         keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
         synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
         morphologicalSynthesis: planJson.morphologicalSynthesis || ""
-      };
+      });
 
       res.json({
         success: true,

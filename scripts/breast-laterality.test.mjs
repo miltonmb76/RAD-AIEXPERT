@@ -53,6 +53,15 @@ test("mammary planner has no thyroid or vascular template instructions", () => {
   assert.doesNotMatch(prompt, /tiroide|carot[ií]d|istmo|cervical|NASCET|endotel|TR3|Mama derecha, 3h/i);
 });
 
+test("mammary planner includes the clinical card in its JSON contract", () => {
+  const prompt = buildBreastPlanPrompt({ reportText: "SYNTHETIC REPORT", clockRules: "CLOCK RULES" });
+  const schema = prompt.slice(prompt.indexOf("RESPONDE ESTRICTAMENTE"));
+  for (const field of ["breastSummary", "morphologyNotes", "axillaryStatus", "keyPoints"]) {
+    assert.ok(schema.includes(`"${field}":`), `JSON contract must include ${field}`);
+  }
+  assert.match(prompt, /nunca deduzcas normalidad/);
+});
+
 test("real server resolver preserves multifocal hours and rejects invented fallback plans", async () => {
   // Stub every provider: no network, dotenv reads, or real credentials.
   const source = await readFile("server_atlas3d.ts", "utf8");
@@ -63,12 +72,13 @@ test("real server resolver preserves multifocal hours and rejects invented fallb
       builder.onResolve({ filter: /^(express|dotenv|@google\/genai)$/ }, (args) => ({ path: args.path, namespace: "synthetic" }));
       builder.onLoad({ filter: /./, namespace: "synthetic" }, (args) => ({ contents:
         args.path === "@google/genai"
-          ? "export class GoogleGenAI { models = { generateContent: async () => ({text: globalThis.__syntheticPlan}) }; }"
+          ? "export class GoogleGenAI { models = { generateContent: async () => ({text: globalThis.__syntheticPlan, candidates: [{content: {parts: [{inlineData: {data: 'U1lOVEhFVElD'}}]}}]}) }; }"
           : "export default { config() {} };", loader: "js" }));
     } }],
   });
   const folder = await mkdtemp(join(tmpdir(), "rad-breast-test-"));
   const file = join(folder, "server.mjs");
+  const originalKey = process.env.GEMINI_API_KEY;
   try {
     await writeFile(file, result.outputFiles[0].text);
     const module = await import(pathToFileURL(file).href);
@@ -93,7 +103,34 @@ test("real server resolver preserves multifocal hours and rejects invented fallb
       assert.equal(body.success, false);
       assert.equal(body.data, undefined);
     }
+
+    // Exercise Cursor's missing-card fix through the actual route, alongside our
+    // multifocal clock correction. Every provider response and image is synthetic.
+    globalThis.__syntheticPlan = "```json\n" + JSON.stringify({
+      panels: [{ panelLetter: "A", panelTitle: "Panel A: Ambas mamas", panelRole: "both_breasts", anatomicalFocus: " " }],
+      lesionTable: [
+        { location: "Mama derecha eje 2", size: "8 mm", composition: "Quística" },
+        { location: "Mama izquierda eje 10", size: "5 mm", composition: "Quística" },
+      ],
+      morphologicalSynthesis: "Hallazgos mamarios bilaterales descritos en el informe sintético.",
+    }) + "\n```";
+    let code = 200, body;
+    await routes.get("/api/generate-3d-breast")({ body: { reportText } }, {
+      status(value) { code = value; return this; }, json(value) { body = value; return this; },
+    });
+    assert.equal(code, 200);
+    assert.equal(body.success, true);
+    assert.ok(body.data.breastSummary.trim());
+    assert.ok(body.data.morphologyNotes.trim());
+    assert.match(body.data.axillaryStatus, /no detalladas/);
+    assert.equal(body.data.keyPoints.length, 2);
+    assert.ok(body.data.panels[0].anatomicalFocus.trim());
+    assert.match(body.data.lesionTable[0].location, /10h/);
+    assert.match(body.data.lesionTable[1].location, /2h/);
+    assert.equal(body.data.panels[0].imageUrl, "data:image/jpeg;base64,U1lOVEhFVElD");
   } finally {
+    if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = originalKey;
     delete globalThis.__syntheticPlan;
     await rm(folder, { recursive: true, force: true });
   }

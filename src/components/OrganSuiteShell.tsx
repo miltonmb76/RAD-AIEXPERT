@@ -23,6 +23,7 @@ import { runBackgroundTask } from "../lib/backgroundTasks";
 import { applyScorecardGovernanceToFigurePack } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 import { remapAnnotationsPanelLetters } from "../lib/suiteImageAnnotations";
+import { remapPanelLetterLabels } from "../lib/breastSuiteFicha";
 import {
   ORGAN_SUITE_THEMES,
   OrganSuiteConfig,
@@ -205,10 +206,22 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
     const remaining = data.panels.filter((p) => p.panelLetter !== panelLetter);
     const alphabet = ["A", "B", "C", "D", "E", "F"];
     const letterMap: Record<string, string> = {};
-    const updatedPanels = remaining.map((p, idx) => {
-      const newLetter = alphabet[idx] || String.fromCharCode(65 + idx);
-      letterMap[p.panelLetter] = newLetter;
-      return { ...p, panelLetter: newLetter };
+    for (let idx = 0; idx < remaining.length; idx++) {
+      const p = remaining[idx];
+      letterMap[p.panelLetter] = alphabet[idx] || String.fromCharCode(65 + idx);
+    }
+    // Remap titles/focus after the full map exists (avoids B→A / C→B collisions).
+    const updatedPanels = remaining.map((p) => {
+      const newLetter = letterMap[p.panelLetter];
+      return {
+        ...p,
+        panelLetter: newLetter,
+        panelTitle: remapPanelLetterLabels(String(p.panelTitle || ""), letterMap),
+        anatomicalFocus: remapPanelLetterLabels(
+          String(p.anatomicalFocus || ""),
+          letterMap
+        ),
+      };
     });
 
     let updatedTitle = data.figureTitle;
