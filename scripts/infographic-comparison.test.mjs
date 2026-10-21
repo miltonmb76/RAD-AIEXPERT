@@ -91,6 +91,11 @@ test("real OpenAI helper: isolated credentials, quality, bounded concurrency and
     assert.equal(safe.status, 502); assert.doesNotMatch(safe.message, /SENSITIVE/);
     assert.match(helper.infographicProviderError({ status: 404 }).message, /modelo.*no está disponible/);
     assert.match(helper.infographicProviderError({ status: 400 }).message, /rechazó la solicitud/);
+    assert.match(helper.infographicProviderError({ status: 400, message: "Your organization must be verified" }).message, /verificar la organización/);
+    assert.equal(helper.infographicProviderError({ status: 400, code: "billing_hard_limit_reached" }).status, 429);
+    assert.equal(helper.infographicProviderError({ status: 400, code: "moderation_blocked" }).status, 422);
+    assert.match(helper.infographicProviderError({ status: 400, param: "output_format" }).message, /formato/);
+    assert.doesNotMatch(helper.infographicProviderError({ status: 400, param: "SENSITIVE PARAM" }).message, /SENSITIVE/);
     globalThis.__radImageBehavior = async () => ({ data: [{ url: "https://example.invalid/never-fetch" }] });
     await assert.rejects(helper.generateOpenAiInfographic("FICTICIO"), /imagen válida/);
     delete process.env.OPENAI_API_KEY;

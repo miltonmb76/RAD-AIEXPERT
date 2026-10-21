@@ -20,10 +20,26 @@ export function requireOpenAiInfographicKey(): string {
 export function infographicProviderError(error: unknown): InfographicProviderError {
   if (error instanceof InfographicProviderError) return error;
   const status = Number((error as { status?: number })?.status);
+  const upstream = error as { code?: string; param?: string; message?: string; error?: { code?: string; param?: string } };
+  const code = upstream?.code || upstream?.error?.code || "";
+  const message = String(upstream?.message || "");
+  if (/organization.*verif|verify.*organization/i.test(message) || code === "organization_not_verified") {
+    return new InfographicProviderError("La cuenta OpenAI requiere verificar la organización para generar imágenes. Gemini sigue disponible.", 502);
+  }
+  if (["billing_hard_limit_reached", "billing_not_active", "insufficient_quota"].includes(code) || /billing.*limit|billing.*active/i.test(message)) {
+    return new InfographicProviderError("La cuenta OpenAI necesita saldo o facturación habilitada para generar imágenes. Gemini sigue disponible.", 429);
+  }
+  if (["moderation_blocked", "content_policy_violation"].includes(code)) {
+    return new InfographicProviderError("OpenAI rechazó esta imagen por sus filtros de contenido. Puedes conservar la versión Gemini.", 422);
+  }
   if (status === 404) return new InfographicProviderError(
     "El modelo de imágenes configurado no está disponible en esta cuenta OpenAI. La opción Gemini sigue disponible.", 502);
-  if (status === 400) return new InfographicProviderError(
-    "OpenAI rechazó la solicitud de imagen. Revisa la compatibilidad del modelo y las instrucciones de la infografía.", 502);
+  if (status === 400) {
+    const fields: Record<string, string> = { model: "modelo", quality: "calidad", size: "tamaño", output_format: "formato", prompt: "instrucciones", n: "número de imágenes" };
+    const field = fields[upstream?.param || upstream?.error?.param || ""];
+    const suffix = field ? ` El ajuste rechazado es: ${field}.` : " Revisa la compatibilidad del modelo y las instrucciones de la infografía.";
+    return new InfographicProviderError("OpenAI rechazó la solicitud de imagen." + suffix, 502);
+  }
   if (status === 401 || status === 403) return new InfographicProviderError(
     "OpenAI no autorizó la generación. Revisa el acceso al modelo de imágenes en la cuenta del servidor.", 502);
   if (status === 429) return new InfographicProviderError(
