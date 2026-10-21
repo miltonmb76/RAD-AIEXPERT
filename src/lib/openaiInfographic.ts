@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { cleanOpenAiKey } from "./openaiPatientSummary";
 import { redactPatientIdentifiersForInfographic } from "./infographicPrivacy";
 
-export const DEFAULT_INFOGRAPHIC_IMAGE_MODEL = "gpt-image-2.5-flare";
+export const DEFAULT_INFOGRAPHIC_IMAGE_MODEL = "gpt-image-1.5";
 let activeGenerations = 0;
 
 export class InfographicProviderError extends Error {
@@ -20,6 +20,10 @@ export function requireOpenAiInfographicKey(): string {
 export function infographicProviderError(error: unknown): InfographicProviderError {
   if (error instanceof InfographicProviderError) return error;
   const status = Number((error as { status?: number })?.status);
+  if (status === 404) return new InfographicProviderError(
+    "El modelo de imágenes configurado no está disponible en esta cuenta OpenAI. La opción Gemini sigue disponible.", 502);
+  if (status === 400) return new InfographicProviderError(
+    "OpenAI rechazó la solicitud de imagen. Revisa la compatibilidad del modelo y las instrucciones de la infografía.", 502);
   if (status === 401 || status === 403) return new InfographicProviderError(
     "OpenAI no autorizó la generación. Revisa el acceso al modelo de imágenes en la cuenta del servidor.", 502);
   if (status === 429) return new InfographicProviderError(

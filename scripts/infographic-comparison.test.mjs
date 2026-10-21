@@ -89,6 +89,8 @@ test("real OpenAI helper: isolated credentials, quality, bounded concurrency and
     await assert.rejects(helper.generateOpenAiInfographic("FICTICIO"));
     const safe = helper.infographicProviderError({ status: 401, message: "SENSITIVE UPSTREAM PAYLOAD" });
     assert.equal(safe.status, 502); assert.doesNotMatch(safe.message, /SENSITIVE/);
+    assert.match(helper.infographicProviderError({ status: 404 }).message, /modelo.*no está disponible/);
+    assert.match(helper.infographicProviderError({ status: 400 }).message, /rechazó la solicitud/);
     globalThis.__radImageBehavior = async () => ({ data: [{ url: "https://example.invalid/never-fetch" }] });
     await assert.rejects(helper.generateOpenAiInfographic("FICTICIO"), /imagen válida/);
     delete process.env.OPENAI_API_KEY;

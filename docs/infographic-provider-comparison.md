@@ -17,7 +17,7 @@ Las candidatas de comparación y las copias originales del panel viven en memori
 ## Servidor
 
 - Utiliza exclusivamente `OPENAI_API_KEY` del servidor; la clave no llega al navegador. No hace falta introducirla en los controles de Gemini.
-- Modelo predeterminado: `gpt-image-2.5-flare`; puede configurarse con `OPENAI_INFOGRAPHIC_MODEL`.
+- Modelo predeterminado: `gpt-image-1.5`; puede configurarse con `OPENAI_INFOGRAPHIC_MODEL`. La disponibilidad del modelo debe verificarse mediante una prueba real con la cuenta del servidor.
 - Una imagen PNG vertical de 1024 × 1536, calidad `high`, por solicitud.
 - Máximo de dos generaciones de imágenes OpenAI simultáneas por proceso, sin reintentos automáticos y con 180 segundos de espera del proveedor. El navegador limita su espera a 240 segundos.
 - No hay sustitución silenciosa por Gemini cuando se solicita OpenAI. Los errores devueltos al navegador no incluyen respuestas crudas del proveedor.
