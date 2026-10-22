@@ -44,6 +44,7 @@ import {
 } from "./appLazyModules";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { requestInfographic } from "./lib/infographicRequest";
+import { InfographicReviewNotice, type InfographicReview } from "./components/InfographicReviewNotice";
 import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
@@ -307,6 +308,7 @@ export default function App() {
   const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
   /** AP = de frente (espejo); PA = de espaldas (mismos lados del cuadro) */
   const [infographicViewOrientation, setInfographicViewOrientation] = useState<InfographicViewOrientation>("AP");
+  const [infographicReviews, setInfographicReviews] = useState<Record<string, InfographicReview>>({});
   const infographicRequestsRef = useRef<{ general: AbortController | null; directed: AbortController | null }>({ general: null, directed: null });
   // Directed classic poster (independent of general — can coexist and both attach)
   const [isGeneratingDirectedInfographic, setIsGeneratingDirectedInfographic] = useState<boolean>(false);
@@ -1573,6 +1575,7 @@ export default function App() {
     setAttachInfographicToOfficialReport(false); setAttachInfographicToPatientSummary(false);
     setAttachDirectedInfographicToOfficialReport(false); setAttachDirectedInfographicToPatientSummary(false);
     setInfographicError(null); setDirectedInfographicError(null);
+    setInfographicReviews({});
   }, [infographicSourceKey]);
   useEffect(() => () => {
     infographicRequestsRef.current.general?.abort();
@@ -3443,6 +3446,7 @@ Ejemplo:
     setSchematicFormat("blocks");
 
     // --- Infografía clásica (paciente + médico) ---
+    setInfographicReviews({});
     setInfographicUrl(null);
     setInfographicClinicianUrl(null);
     setInfographicAudienceTab("patient");
@@ -5067,6 +5071,10 @@ Ejemplo:
     setIsGeneratingInfographic(true);
     setInfographicRegenAudience(target);
     setInfographicError(null);
+    setInfographicReviews(previous => Object.fromEntries(Object.entries(previous).filter(([key]) =>
+      key !== "general:patient" || !doPatient).filter(([key]) => key !== "general:clinician" || !doClinician)));
+    setAttachInfographicToOfficialReport(false);
+    setAttachInfographicToPatientSummary(false);
     // Solo limpia la(s) version(es) que se regeneran; la otra se conserva
     if (doPatient && doClinician) {
       setInfographicUrl(null);
@@ -5077,10 +5085,6 @@ Ejemplo:
     } else if (doClinician) {
       setInfographicClinicianUrl(null);
       setInfographicAudienceTab("clinician");
-    }
-    if (!opts?.keepAttachments) {
-      setAttachInfographicToOfficialReport(false);
-      setAttachInfographicToPatientSummary(false);
     }
     try {
       const notes = infographicCorrectionNotes.trim();
@@ -5102,6 +5106,12 @@ Ejemplo:
       const requestAudience = async (audience: "patient" | "clinician") => {
         const data = await requestInfographic({ ...baseBody, audience }, controller.signal);
         if (!isCurrent()) return { success: false };
+        if (data?.success && data?.imageUrl && data?.lateralityQa?.status === "needs_review") {
+          setInfographicReviews(previous => ({ ...previous, [`general:${audience}`]: {
+            sourceKey: infographicSourceKey,
+            reasons: Array.isArray(data.lateralityQa.reasons) ? data.lateralityQa.reasons : [],
+          } }));
+        }
         if (data?.success && data?.imageUrl) {
           if (audience === "patient") setInfographicUrl(data.imageUrl);
           else setInfographicClinicianUrl(data.imageUrl);
@@ -5195,6 +5205,10 @@ Ejemplo:
     setIsGeneratingDirectedInfographic(true);
     setDirectedInfographicRegenAudience(target);
     setDirectedInfographicError(null);
+    setInfographicReviews(previous => Object.fromEntries(Object.entries(previous).filter(([key]) =>
+      key !== "directed:patient" || !doPatient).filter(([key]) => key !== "directed:clinician" || !doClinician)));
+    setAttachDirectedInfographicToOfficialReport(false);
+    setAttachDirectedInfographicToPatientSummary(false);
     if (doPatient && doClinician) {
       setDirectedInfographicUrl(null);
       setDirectedInfographicClinicianUrl(null);
@@ -5204,10 +5218,6 @@ Ejemplo:
     } else if (doClinician) {
       setDirectedInfographicClinicianUrl(null);
       setDirectedInfographicAudienceTab("clinician");
-    }
-    if (!opts?.keepAttachments) {
-      setAttachDirectedInfographicToOfficialReport(false);
-      setAttachDirectedInfographicToPatientSummary(false);
     }
     try {
       const notes = directedCorrectionNotes.trim();
@@ -5231,6 +5241,12 @@ Ejemplo:
       const requestAudience = async (audience: "patient" | "clinician") => {
         const data = await requestInfographic({ ...baseBody, audience }, controller.signal);
         if (!isCurrent()) return { success: false };
+        if (data?.success && data?.imageUrl && data?.lateralityQa?.status === "needs_review") {
+          setInfographicReviews(previous => ({ ...previous, [`directed:${audience}`]: {
+            sourceKey: infographicSourceKey,
+            reasons: Array.isArray(data.lateralityQa.reasons) ? data.lateralityQa.reasons : [],
+          } }));
+        }
         if (data?.success && data?.imageUrl) {
           if (audience === "patient") setDirectedInfographicUrl(data.imageUrl);
           else setDirectedInfographicClinicianUrl(data.imageUrl);
@@ -9328,6 +9344,9 @@ Ejemplo:
                                    : infographicUrl || infographicClinicianUrl;
                                if (!activeUrl) return null;
                                return (
+                                 <>
+                                 <InfographicReviewNotice review={infographicReviews[`general:${infographicAudienceTab}`]?.sourceKey === infographicSourceKey
+                                   ? infographicReviews[`general:${infographicAudienceTab}`] : undefined} />
                                  <img
                                    src={activeUrl}
                                    alt={
@@ -9338,6 +9357,7 @@ Ejemplo:
                                    className="w-full rounded-lg"
                                    referrerPolicy="no-referrer"
                                  />
+                                </>
                                );
                              })()}
 
@@ -9564,7 +9584,10 @@ Ejemplo:
                                   : directedInfographicUrl || directedInfographicClinicianUrl;
                               if (!activeUrl) return null;
                               return (
-                                <img
+                                <>
+                                <InfographicReviewNotice review={infographicReviews[`directed:${directedInfographicAudienceTab}`]?.sourceKey === infographicSourceKey
+                                   ? infographicReviews[`directed:${directedInfographicAudienceTab}`] : undefined} />
+                                 <img
                                   src={activeUrl}
                                   alt={
                                     directedInfographicAudienceTab === "clinician"
@@ -9574,6 +9597,7 @@ Ejemplo:
                                   className="w-full rounded-lg"
                                   referrerPolicy="no-referrer"
                                 />
+                                </>
                               );
                             })()}
                             <div className="mt-3 space-y-2">

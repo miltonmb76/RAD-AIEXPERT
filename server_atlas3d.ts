@@ -1,3 +1,4 @@
+import { getMskOrientationReference, MSK_ORIENTATION_REFERENCE_GUIDE } from "./src/lib/mskOrientationReference";
 import { buildBreastPlanPrompt } from "./src/lib/breastPlanPrompt";
 import { extractBreastClockHours, extractBreastClockTargets, detectBreastClockSide } from "./src/lib/infographicBreastClock";
 import express from "express";
@@ -1602,7 +1603,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
   async function generateMedicalImage(
     ai: any,
     prompt: string,
-    opts?: { referenceImageUrl?: string | null; referenceKind?: "us" | "cgi_sibling" | "msk_correction"; mskChecked?: boolean }
+    opts?: { referenceImageUrl?: string | null; referenceKind?: "us" | "cgi_sibling" | "msk_correction"; mskChecked?: boolean; orientationReferenceImageUrl?: string }
   ): Promise<string> {
     // Central choke-point: every suite / atlas / vascular / focal render gets clean-PNG rules.
     const reinforcedPrompt = reinforceCleanRenderPrompt(prompt);
@@ -1645,9 +1646,14 @@ export function registerAtlas3DRoutes(app: express.Express) {
 
     // Each checked MSK candidate is exactly one model call. A failed correction
     // must not start another text render and an Imagen fallback underneath QA.
-    if (opts?.mskChecked) return runFlashImage(ref ? {
-      parts: [{ text: `${refGuide}\n\n${reinforcedPrompt}` }, { inlineData: { mimeType: ref.mime, data: ref.data } }],
-    } : reinforcedPrompt);
+    if (opts?.mskChecked) {
+      const orientation = opts.orientationReferenceImageUrl ? stripDataUrl(opts.orientationReferenceImageUrl) : null;
+      return runFlashImage({ parts: [
+        { text: `${orientation ? MSK_ORIENTATION_REFERENCE_GUIDE : ""}\n${ref ? refGuide : ""}\n${reinforcedPrompt}` },
+        ...(orientation ? [{ inlineData: { mimeType: orientation.mime, data: orientation.data } }] : []),
+        ...(ref ? [{ inlineData: { mimeType: ref.mime, data: ref.data } }] : []),
+      ] });
+    }
 
     // Prefer multimodal reference when available (Bridge US→3D or Focal A→B).
     if (ref) {
@@ -1694,10 +1700,12 @@ export function registerAtlas3DRoutes(app: express.Express) {
     if (side === "unspecified") {
       throw new Error("Selecciona el lado derecho o izquierdo de este panel antes de generar la imagen.");
     }
+    const contract = { organ, side, view: detectMskView(prompt), clinicalSite };
+    const orientationReferenceImageUrl = await getMskOrientationReference(contract);
     const checked = await generateCheckedMskImage({
-      contract: { organ, side, view: detectMskView(prompt), clinicalSite },
+      contract,
       generate: (feedback, rejectedImage) => generateMedicalImage(ai, `${feedback}\n${prompt}\n${feedback}`,
-        { mskChecked: true, ...(rejectedImage ? { referenceImageUrl: rejectedImage, referenceKind: "msk_correction" as const } : {}) }),
+        { mskChecked: true, orientationReferenceImageUrl, ...(rejectedImage ? { referenceImageUrl: rejectedImage, referenceKind: "msk_correction" as const } : {}) }),
       inspect: async (imageUrl, instruction) => {
         const image = stripDataUrl(imageUrl);
         if (!image) throw new Error("Invalid image");

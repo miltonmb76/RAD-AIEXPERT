@@ -5,6 +5,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+# The orientation map uses the existing bundled font; no system font download.
+COPY assets/fonts/LiberationSans-*.ttf /usr/share/fonts/truetype/rad/
 RUN npm run test:msk && npm run build
 
 FROM node:22-bookworm-slim AS runtime
@@ -20,6 +22,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.cjs ./server.cjs
 COPY --from=build /app/server.cjs.map ./server.cjs.map
 COPY firebase-applet-config.json ./
+COPY assets/fonts/LiberationSans-*.ttf /usr/share/fonts/truetype/rad/
 COPY scripts/msk-pdf-smoke.mjs ./msk-pdf-smoke.mjs
 
 USER node

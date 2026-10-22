@@ -41,6 +41,7 @@ import {
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
 import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
+import { getMskOrientationReference, MSK_ORIENTATION_REFERENCE_GUIDE } from "./src/lib/mskOrientationReference";
 import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, MskImageValidationError, type MskImageContract } from "./src/lib/mskImageLaterality";
 import { createInfographicExecution, InfographicExecutionError, isInfographicImageConfigError, isTerminalInfographicError } from "./src/lib/infographicExecution";
 import {
@@ -2047,12 +2048,14 @@ ${recoBlock}
 Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
+    const orientationReference = mskContract ? await getMskOrientationReference(mskContract) : null;
     const tryGenerate = async (aspectRatio: string, imageSize: string, feedback = "", rejectedImage?: string) => {
       const reference = rejectedImage?.match(/^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/);
       const response = await execution.run("image", executionConfig => ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
         contents: {
-          parts: [{ text: `${feedback}\n${promptText}\n${feedback}` },
+          parts: [{ text: `${mskContract ? MSK_ORIENTATION_REFERENCE_GUIDE : ""}\n${feedback}\n${promptText}\n${feedback}` },
+            ...(orientationReference ? [{ inlineData: { mimeType: "image/png", data: orientationReference.split(",")[1] } }] : []),
             ...(reference ? [{ inlineData: { mimeType: reference[1], data: reference[2] } }] : [])],
         },
         config: {
@@ -2105,7 +2108,8 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       if (lastError) throw lastError;
       throw new Error("No se pudo generar la imagen de la infografía.");
     };
-    const imageUrl = mskContract ? (await generateCheckedMskImage({
+    const checkedImage = mskContract ? await generateCheckedMskImage({
+      policy: "preview",
       contract: { ...mskContract, expectedCopy: copyPlan ? buildLockedCopyPromptBlock(copyPlan) : undefined },
       generate: renderCandidate,
       inspect: async (candidate, instruction) => {
@@ -2118,13 +2122,14 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
         }));
         return String(checked.text || "");
       },
-    })).imageUrl : await renderCandidate();
-
-    if (execution.error) throw execution.error;
-    outcome = "success";
+    }) : { imageUrl: await renderCandidate(), lateralityQa: undefined };
+    const needsReview = checkedImage.lateralityQa?.status === "needs_review";
+    if (execution.error?.reason === "disconnected" || (execution.error && !needsReview)) throw execution.error;
+    outcome = needsReview ? "needs_review" : "success";
     res.json({
       success: true,
-      imageUrl,
+      imageUrl: checkedImage.imageUrl,
+      lateralityQa: checkedImage.lateralityQa,
       viewOrientation: orientation,
       audience: audienceMode,
       mode: isDirected ? "directed" : "general",

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import sharp from "sharp";
+import { mskOrientationMap, getMskOrientationReference, buildMskOrientationSvg } from "../src/lib/mskOrientationReference.ts";
+
 import { test } from "node:test";
 import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,11 +9,15 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { EventEmitter } from "node:events";
+import { createRequire } from "node:module";
 import {
   resolveMskLaterality, detectMskView, detectMskOrgan, buildMskLandmarkBrief,
   acceptsMskVisualCheck, generateCheckedMskImage, generateMskPlan, MskImageValidationError, buildMskCorrectionBrief,
 } from "../src/lib/mskImageLaterality.ts";
 
+const sharpExternal = { name: "native-sharp", setup(builder) {
+  builder.onResolve({ filter: /^sharp$/ }, () => ({ path: createRequire(import.meta.url).resolve("sharp"), external: true }));
+} };
 const image = "data:image/jpeg;base64,U1lOVEhFVElD";
 const observation = (contract, patch = {}) => {
   const lateral = (contract.side === "right") === (contract.view === "AP") ? "left" : "right";
@@ -19,6 +26,72 @@ const observation = (contract, patch = {}) => {
     landmarksVisible: true, clinicalSiteMatches: true, allPanelsConsistent: true, textMatchesClinicalSource: true, productionInstructionsAbsent: true, textLegibleAndCorrect: true,
     observations: ["Synthetic visible landmark evidence, no patient data"], ...patch };
 };
+
+for (const organ of ["shoulder", "knee"]) for (const side of ["right", "left"]) for (const view of ["AP", "PA"]) {
+  test(`fixed orientation reference ${organ}/${side}/${view}: patient side and local medial/lateral map agree`, async () => {
+    const contract = { organ, side, view };
+    const [map] = mskOrientationMap(contract);
+    const lateralLeft = (side === "right") === (view === "AP");
+    assert.equal(map.lateral, lateralLeft ? "left" : "right");
+    assert.equal(map.medial, lateralLeft ? "right" : "left");
+    const png = await getMskOrientationReference(contract);
+    const raw = Buffer.from(png.split(",")[1], "base64");
+    assert.equal(raw.subarray(1, 4).toString(), "PNG");
+    const { data, info } = await sharp(raw).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const sample = (x, y) => [...data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3)];
+    assert.deepEqual(sample(map.lateralX, 280), [2, 132, 199], "lateral anatomy is blue at the program-selected viewer position");
+    const x = lateralLeft ? (organ === 'knee' ? 138 : 108) : (organ === 'knee' ? 182 : 212);
+    const pixel = sample(x, organ === 'knee' ? 330 : 130);
+    assert.ok(pixel[2] > pixel[0] + 30, 'the highlighted joint on the body agrees with the local orientation');
+    assert.doesNotMatch(buildMskOrientationSvg(contract), /6 × 3|bursitis|rotura/);
+    assert.equal(await getMskOrientationReference(contract), png);
+  });
+}
+test("bilateral map independently anchors both patient sides without mixing their view", async () => {
+  for (const view of ['AP', 'PA']) {
+    const maps = mskOrientationMap({ organ: 'knee', side: 'bilateral', view });
+    assert.deepEqual(maps.map(map => map.side), ['right', 'left']);
+    assert.notEqual(maps[0].lateral, maps[1].lateral);
+    const png = await getMskOrientationReference({ organ: 'knee', side: 'bilateral', view });
+    assert.equal((await sharp(Buffer.from(png.split(',')[1], 'base64')).metadata()).height, 880);
+  }
+});
+
+test("infographic uncertainty is viewable with its real review status, without repeated generation", async () => {
+  const contract = { organ: 'shoulder', side: 'left', view: 'AP', format: 'infographic', clinicalSite: 'Rotura parcial bursal 6 × 3 mm' };
+  for (const check of [observation(contract, { anatomicalSide: 'unknown', landmarksVisible: false }),
+      observation(contract, { textLegibleAndCorrect: false }), 'incomplete', new Error('PRIVATE_SYNTHETIC')]) {
+    let images = 0, reviews = 0;
+    const result = await generateCheckedMskImage({ contract, policy: 'preview',
+      generate: async text => { images++; assert.match(text, /6 × 3 mm/); return image; },
+      inspect: async () => { reviews++; if (check instanceof Error) throw check; return check; },
+    });
+    assert.equal(result.imageUrl, image);
+    assert.equal(result.lateralityQa.status, 'needs_review');
+    assert.equal(images, 1); assert.equal(reviews, 1);
+    assert.doesNotMatch(JSON.stringify(result.lateralityQa), /PRIVATE_SYNTHETIC|Rotura|data:image/);
+  }
+});
+test("a concrete incorrect side gets one targeted edit, then remains visible for review without a false pass", async () => {
+  const contract = { organ: 'shoulder', side: 'left', view: 'AP', format: 'infographic', clinicalSite: 'Synthetic' };
+  for (const correction of ['still-wrong', 'fails', 'invalid']) {
+    let images = 0;
+    const result = await generateCheckedMskImage({ contract, policy: 'preview',
+      generate: async (_text, previous) => {
+        images++;
+        if (images === 2) {
+          assert.equal(previous, image);
+          if (correction === 'fails') throw new Error('Synthetic outage');
+          if (correction === 'invalid') return 'not-an-image';
+        }
+        return image;
+      }, inspect: async () => observation(contract, { anatomicalSide: 'right' }),
+    });
+    assert.equal(images, 2); assert.equal(result.imageUrl, image);
+    assert.equal(result.lateralityQa.status, 'needs_review');
+    assert.ok(result.lateralityQa.reasons.includes('laterality'));
+  }
+});
 
 test("clinical side survives automatic selection, English values and layout-only corrections", () => {
   assert.equal(resolveMskLaterality("auto", "Hombro izquierdo"), "left");
@@ -254,7 +327,7 @@ test("real shoulder/knee generate and regenerate routes use clinical side and vi
     const source = await readFile("server_atlas3d.ts", "utf8");
     const output = await build({ stdin: { contents: source + '\nexport { resolveKneeMeniscusTarget, buildScreenLateralityConstraint };', resolveDir: resolve("."), loader: "ts" },
       bundle: true, write: false, platform: "node", format: "esm",
-      plugins: [{ name: "synthetic-providers", setup(builder) {
+      plugins: [sharpExternal, { name: "synthetic-providers", setup(builder) {
         builder.onResolve({ filter: /^(express|dotenv|@google\/genai)$/ }, (args) => ({ path: args.path, namespace: "synthetic" }));
         builder.onLoad({ filter: /./, namespace: "synthetic" }, (args) => ({ contents:
           args.path === "@google/genai" ? `export class GoogleGenAI { models = { generateContent: async (request) => {
@@ -295,6 +368,10 @@ test("real shoulder/knee generate and regenerate routes use clinical side and vi
       assert.equal(generated.result.data.panels[0].laterality, "Izquierda");
       assert.equal(generated.result.data.panels[0].imageUrl, image);
       assert.equal(globalThis.__mskFixture.audits, 1);
+      const render = globalThis.__mskFixture.requests.find(r => r.config?.imageConfig);
+      assert.match(render.contents.parts[0].text, /CODE-GENERATED ORIENTATION MAP/);
+      assert.equal(render.contents.parts.filter(p => p.inlineData).length, 1);
+
       const planningText = globalThis.__mskFixture.requests.find(r => !r.config?.imageConfig && !r.contents?.parts?.some(p => p.inlineData)).contents[0].text;
       assert.match(planningText, /SOLO si/);
       assert.doesNotMatch(planningText, /rehabilitación dirigida|Pinzamiento leve en arco medio/);
@@ -326,7 +403,7 @@ test("real shoulder/knee generate and regenerate routes use clinical side and vi
   }
 });
 
-test("actual infographic route checks patient/clinician images and blocks failed anatomy", async () => {
+test("actual infographic route separates checked images from visible drafts without blocking on uncertain anatomy", async () => {
   const folder = await mkdtemp(join(tmpdir(), "rad-msk-infographic-"));
   try {
     // Isolate the actual HTTP handler; no app startup, Firebase, credentials or network.
@@ -335,6 +412,7 @@ test("actual infographic route checks patient/clinician images and blocks failed
     const end = server.indexOf('\n});', start) + 5;
     assert.ok(start > 0 && end > start);
     const setup = `
+      import { getMskOrientationReference, MSK_ORIENTATION_REFERENCE_GUIDE } from './src/lib/mskOrientationReference';
       import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, MskImageValidationError } from './src/lib/mskImageLaterality';
       import { buildInfographicLateralityPromptBlock, detectInfographicViewOrientation, extractInfographicLaterality, mergeLateralityIntoCopyPlan } from './src/lib/infographicLaterality';
       import { createInfographicExecution, InfographicExecutionError, isInfographicImageConfigError, isTerminalInfographicError } from './src/lib/infographicExecution';
@@ -350,7 +428,7 @@ test("actual infographic route checks patient/clinician images and blocks failed
       ${server.slice(server.indexOf('function handleGeminiError('), server.indexOf('\n}\n', server.indexOf('function handleGeminiError(')) + 2)}
     `;
     const output = await build({ stdin: { contents: setup + server.slice(start, end) + '\nexport { handler };', loader: "ts", resolveDir: resolve(".") },
-      bundle: true, platform: "node", format: "esm", write: false });
+      bundle: true, platform: "node", format: "esm", write: false, plugins: [sharpExternal] });
     const file = join(folder, "route.mjs"); await writeFile(file, output.outputFiles[0].text);
     const { handler } = await import(pathToFileURL(file).href);
     const briefPlan = { title: "Synthetic clinical title", callouts: [{ label: "Hallazgo", detail: "Informe sintético del estudio izquierdo" }], mustSpellExactly: [] };
@@ -404,23 +482,21 @@ test("actual infographic route checks patient/clinician images and blocks failed
       fixture.images = fixture.audits = 0;
       fixture.check = { ...fixture.check, clinicalSiteMatches: false };
       const rejected = await run(body);
-      assert.equal(rejected.result.success, false);
-      assert.equal(rejected.result.imageUrl, undefined);
-      assert.equal(fixture.images, 2);
-      assert.equal(fixture.audits, 2);
+      assert.equal(rejected.result.success, true);
+      assert.equal(rejected.result.imageUrl, image);
+      assert.equal(rejected.result.lateralityQa.status, "needs_review");
+      assert.equal(fixture.images, 1);
+      assert.equal(fixture.audits, 1);
       for (const field of ["textMatchesClinicalSource", "productionInstructionsAbsent", "textLegibleAndCorrect"]) {
         fixture.images = fixture.audits = 0;
         fixture.check = observation({ organ, side: "left", view: "AP" }, { [field]: false });
         const badCopy = await run(body);
-        assert.equal(badCopy.result.success, false);
-        assert.equal(badCopy.result.imageUrl, undefined);
-        assert.equal(fixture.images, 2);
-        assert.equal(badCopy.result.validation.generated, 2);
-        assert.doesNotMatch(badCopy.result.error, /Detalle técnico del error/);
+        assert.equal(badCopy.result.success, true);
+        assert.equal(badCopy.result.imageUrl, image);
+        assert.equal(fixture.images, 1);
+        assert.equal(badCopy.result.lateralityQa.attempts, 1);
         if (field === "textLegibleAndCorrect") {
-          assert.deepEqual(badCopy.result.validation.reasons, ["spelling"]);
-          assert.match(badCopy.result.error, /escritura o legibilidad/);
-          assert.doesNotMatch(badCopy.result.error, /lado anatómico/);
+          assert.deepEqual(badCopy.result.lateralityQa.reasons, ["spelling"]);
         }
       }
     }
@@ -452,9 +528,11 @@ test("actual infographic route checks patient/clinician images and blocks failed
     assert.match(corrected.result.imageUrl, /^data:image\/png;base64,/);
     const renders = fixture.requests.filter(r => r.config?.imageConfig);
     assert.equal(renders.length, 2);
-    assert.equal(renders[0].contents.parts.some(p => p.inlineData), false);
+    assert.equal(renders[0].contents.parts.filter(p => p.inlineData).length, 1, 'first generation receives the fixed orientation map');
+    assert.match(renders[0].contents.parts[0].text, /CODE-GENERATED ORIENTATION MAP/);
     for (const render of renders.slice(1)) {
-      assert.equal(render.contents.parts.find(p => p.inlineData).inlineData.mimeType, "image/png");
+      assert.equal(render.contents.parts.filter(p => p.inlineData).length, 2);
+      assert.equal(render.contents.parts.filter(p => p.inlineData)[1].inlineData.mimeType, "image/png");
       assert.match(render.contents.parts[0].text, /REJECTED candidate/);
     }
     assert.match(renders[1].contents.parts[0].text, /observed patient side right; required patient side is left/);
@@ -465,8 +543,9 @@ test("actual infographic route checks patient/clinician images and blocks failed
       fixture.auditQueue = failAt === 2 ? [observation(left, { anatomicalSide: "right" })] : [];
       fixture.check = observation(left);
       const unavailable = await run(longBody);
-      assert.equal(unavailable.result.success, false);
-      assert.equal(unavailable.result.imageUrl, undefined);
+      assert.equal(unavailable.result.success, failAt === 2);
+      assert.equal(unavailable.result.imageUrl, failAt === 2 ? image : undefined);
+      if (failAt === 2) assert.equal(unavailable.result.lateralityQa.status, "needs_review", 'a failed correction preserves the first image for review');
       assert.equal(fixture.images, failAt, "no size/ratio fallback chain under a checked MSK candidate");
     }
     fixture.failImageAt = 0;
@@ -477,7 +556,11 @@ test("actual infographic route checks patient/clinician images and blocks failed
       console.info = value => diagnostics.push(value);
       let unavailable;
       try { unavailable = await run(longBody); } finally { console.info = info; }
-      assert.equal(unavailable.result.success, false);
+      assert.equal(unavailable.result.success, stage === "review");
+      if (stage === "review") {
+        assert.equal(unavailable.result.imageUrl, image);
+        assert.equal(unavailable.result.lateralityQa.status, "needs_review");
+      }
       assert.doesNotMatch(JSON.stringify(unavailable.result), /PRIVATE_SYNTHETIC/);
       assert.equal(fixture[stage === "plan" ? "plans" : stage === "image" ? "images" : "audits"], 1);
       assert.equal(fixture.images, stage === "plan" ? 0 : 1);
@@ -521,10 +604,10 @@ test("actual infographic route checks patient/clinician images and blocks failed
     fixture.images = fixture.audits = 0;
     fixture.check = observation(left, { view: "unknown", landmarksVisible: false });
     const uncertain = await run(longBody);
-    assert.equal(uncertain.result.success, false);
-    assert.equal(uncertain.result.validation.stopReason, "insufficient_evidence");
+    assert.equal(uncertain.result.success, true);
+    assert.equal(uncertain.result.lateralityQa.status, "needs_review");
+    assert.equal(uncertain.result.imageUrl, image);
     assert.equal(fixture.images, 1);
-    assert.equal(uncertain.result.imageUrl, undefined);
     const missing = await run({ studyType: "Hombro", report: "Tendinosis sintética, lado sin documentar." });
     assert.equal(missing.code, 400);
     fixture.audits = 0;
@@ -547,7 +630,7 @@ test("actual UI action displays either ready version before its sibling settles 
     const start = source.indexOf("  const handleGenerateInfographic = async");
     const end = source.indexOf("  // ACTION: APPEND THE SELECTED CLASSIFICATION", start);
     assert.ok(start > 0 && end > start);
-    const setters = ["IsGeneratingDirectedInfographic", "DirectedInfographicRegenAudience", "DirectedInfographicError", "DirectedInfographicUrl", "DirectedInfographicClinicianUrl", "DirectedInfographicAudienceTab", "DirectedTopic", "AttachDirectedInfographicToOfficialReport", "AttachDirectedInfographicToPatientSummary", "IsGeneratingInfographic", "InfographicRegenAudience", "InfographicError", "InfographicUrl", "InfographicClinicianUrl", "InfographicAudienceTab", "AttachInfographicToOfficialReport", "AttachInfographicToPatientSummary", "InfographicViewOrientation"];
+    const setters = ["InfographicReviews", "IsGeneratingDirectedInfographic", "DirectedInfographicRegenAudience", "DirectedInfographicError", "DirectedInfographicUrl", "DirectedInfographicClinicianUrl", "DirectedInfographicAudienceTab", "DirectedTopic", "AttachDirectedInfographicToOfficialReport", "AttachDirectedInfographicToPatientSummary", "IsGeneratingInfographic", "InfographicRegenAudience", "InfographicError", "InfographicUrl", "InfographicClinicianUrl", "InfographicAudienceTab", "AttachInfographicToOfficialReport", "AttachInfographicToPatientSummary", "InfographicViewOrientation"];
     const setup = `
       import { requestInfographic } from './src/lib/infographicRequest';
       const infographicSourceKey = 'synthetic-a';
@@ -559,7 +642,7 @@ test("actual UI action displays either ready version before its sibling settles 
       const generatedReport = 'Synthetic clinical report', studyType = 'Hombro', reportDate = '',
         projections = [], infographicViewOrientation = 'AP', laterality = 'Izquierda', diagnosisAnchor = '', infographicCorrectionNotes = '';
       const fetch = (...args) => globalThis.__infographicUi.fetch(...args);
-      ${setters.map(key => `const set${key} = value => { globalThis.__infographicUi.state.${key} = value; };`).join("\n")}
+      ${setters.map(key => `const set${key} = value => { globalThis.__infographicUi.state.${key} = typeof value === "function" ? value(globalThis.__infographicUi.state.${key} || {}) : value; };`).join("\n")}
     `;
     const effectStart = source.indexOf('    if (previousInfographicSourceRef.current === infographicSourceKey) return;');
     const effectEnd = source.indexOf('  }, [infographicSourceKey]);', effectStart);
@@ -612,6 +695,25 @@ test("actual UI action displays either ready version before its sibling settles 
       assert.equal(state[otherKey], null);
       assert.match(state[stateKey('InfographicError')], /Se muestra la disponible/);
       assert.equal(state[loading], false);
+    }
+    for (const kind of ['general', 'directed']) {
+      const handle = kind === 'general' ? handleGenerateInfographic : handleGenerateDirectedInfographic;
+      const state = { AttachInfographicToOfficialReport: true, AttachInfographicToPatientSummary: true,
+        AttachDirectedInfographicToOfficialReport: true, AttachDirectedInfographicToPatientSummary: true };
+      globalThis.__infographicUi = { ...initial(), state, fetch: async () => response(true, {
+        success: true, imageUrl: image, lateralityQa: { status: 'needs_review', reasons: ['laterality', 'clinical_text'] },
+      }) };
+      await handle({ keepAttachments: true });
+      const prefix = kind === 'general' ? 'Infographic' : 'DirectedInfographic';
+      assert.equal(state[`${prefix}Url`], image);
+      assert.equal(state[`${prefix}ClinicianUrl`], image);
+      assert.equal(state[`Attach${prefix}ToOfficialReport`], false, 'regeneration must not retain an old attachment selection');
+      assert.equal(state[`Attach${prefix}ToPatientSummary`], false);
+      assert.deepEqual(state.InfographicReviews[`${kind}:patient`].reasons, ['laterality', 'clinical_text']);
+      assert.equal(state[`${prefix}Error`], null, 'an inconclusive audit is not a generation failure');
+      changeStudy('synthetic-b');
+      assert.deepEqual(state.InfographicReviews, {}, 'review notices belong only to their original study');
+      assert.equal(state[`${prefix}Url`], null);
     }
     for (const kind of ['general', 'directed']) {
       const handle = kind === 'general' ? handleGenerateInfographic : handleGenerateDirectedInfographic;
