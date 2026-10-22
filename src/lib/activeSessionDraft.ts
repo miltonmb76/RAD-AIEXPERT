@@ -44,6 +44,7 @@ export type ActiveSessionAnnexBundle = {
   attachedImages: unknown[];
   findings3dRenders: unknown[];
   // Classic infographics
+  infographicReviews?: Record<string, { sourceKey: string; reasons: string[] }>;
   infographicUrl: string | null;
   infographicClinicianUrl: string | null;
   directedInfographicUrl: string | null;

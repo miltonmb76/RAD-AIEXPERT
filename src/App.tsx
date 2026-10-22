@@ -310,6 +310,16 @@ export default function App() {
   const [infographicViewOrientation, setInfographicViewOrientation] = useState<InfographicViewOrientation>("AP");
   const [infographicReviews, setInfographicReviews] = useState<Record<string, InfographicReview>>({});
   const infographicRequestsRef = useRef<{ general: AbortController | null; directed: AbortController | null }>({ general: null, directed: null });
+  const infographicCaseEpochRef = useRef(0);
+  const beginInfographicCase = () => {
+    infographicCaseEpochRef.current++;
+    infographicRequestsRef.current.general?.abort();
+    infographicRequestsRef.current.directed?.abort();
+    infographicRequestsRef.current = { general: null, directed: null };
+    setInfographicUrl(null); setInfographicClinicianUrl(null);
+    setDirectedInfographicUrl(null); setDirectedInfographicClinicianUrl(null);
+    setInfographicReviews({});
+  };
   // Directed classic poster (independent of general — can coexist and both attach)
   const [isGeneratingDirectedInfographic, setIsGeneratingDirectedInfographic] = useState<boolean>(false);
   /** Which directed poster audience is regenerating (null = idle). */
@@ -587,6 +597,7 @@ export default function App() {
       }
 
       if (localStudy) {
+        beginInfographicCase();
         setCurrentCloudStudyId(localStudy.id);
         setPatientName(localStudy.patientName || "");
         setPatientEmail(localStudy.patientEmail || "");
@@ -649,6 +660,7 @@ export default function App() {
         getSingleStudyFromCloud(viewStudyId)
           .then((study) => {
             if (study) {
+              beginInfographicCase();
               setCurrentCloudStudyId(study.id);
               setPatientName(study.patientName || "");
               setPatientEmail(study.patientEmail || "");
@@ -1555,12 +1567,15 @@ export default function App() {
   const [generationSteps, setGenerationSteps] = useState<string>("");
   const [generatedReport, setGeneratedReport] = useState<string>(() => bootDraft?.generatedReport || "");
 
-  // A pending image belongs to this exact study, not to the next patient/report.
-  const infographicSourceKey = useMemo(() => JSON.stringify([
-    patientId, patientName, selectedWorklistPatientId, generatedReport, studyType, laterality, infographicViewOrientation,
-  ]), [patientId, patientName, selectedWorklistPatientId, generatedReport, studyType, laterality, infographicViewOrientation]);
+  // Identity changes cancel requests; report enrichment in the same case does not.
+  const infographicSourceKey = JSON.stringify([
+    infographicCaseEpochRef.current, patientId, patientName, selectedWorklistPatientId, studyType, laterality, infographicViewOrientation,
+  ]);
   const infographicSourceRef = useRef(infographicSourceKey);
   infographicSourceRef.current = infographicSourceKey;
+  const infographicReportRef = useRef(generatedReport);
+  infographicReportRef.current = generatedReport;
+  const previousInfographicReportRef = useRef(generatedReport);
   const previousInfographicSourceRef = useRef(infographicSourceKey);
   useEffect(() => {
     if (previousInfographicSourceRef.current === infographicSourceKey) return;
@@ -1577,6 +1592,26 @@ export default function App() {
     setInfographicError(null); setDirectedInfographicError(null);
     setInfographicReviews({});
   }, [infographicSourceKey]);
+  useEffect(() => {
+    if (previousInfographicReportRef.current === generatedReport) return;
+    previousInfographicReportRef.current = generatedReport;
+    // Background modules may polish/correlate the report while images run.
+    // Preserve the images, explicitly mark their source as older and detach them.
+    setAttachInfographicToOfficialReport(false); setAttachInfographicToPatientSummary(false);
+    setAttachDirectedInfographicToOfficialReport(false); setAttachDirectedInfographicToPatientSummary(false);
+    const available: Array<[string, string | null]> = [
+      ["general:patient", infographicUrl], ["general:clinician", infographicClinicianUrl],
+      ["directed:patient", directedInfographicUrl], ["directed:clinician", directedInfographicClinicianUrl],
+    ];
+    setInfographicReviews(previous => {
+      const next = { ...previous };
+      for (const [key, url] of available) if (url) next[key] = {
+        sourceKey: infographicSourceKey,
+        reasons: [...new Set([...(next[key]?.reasons || []), "source_changed"])],
+      };
+      return next;
+    });
+  }, [generatedReport, infographicSourceKey, infographicUrl, infographicClinicianUrl, directedInfographicUrl, directedInfographicClinicianUrl]);
   useEffect(() => () => {
     infographicRequestsRef.current.general?.abort();
     infographicRequestsRef.current.directed?.abort();
@@ -2855,6 +2890,7 @@ Ejemplo:
     patientSummary: null as any,
     attachedImages: [] as any[],
     findings3dRenders: [] as any[],
+    infographicReviews: {} as Record<string, InfographicReview>,
     infographicUrl: null as string | null,
     infographicClinicianUrl: null as string | null,
     directedInfographicUrl: null as string | null,
@@ -2934,6 +2970,7 @@ Ejemplo:
     patientSummary,
     attachedImages,
     findings3dRenders,
+    infographicReviews,
     infographicUrl,
     infographicClinicianUrl,
     directedInfographicUrl,
@@ -3026,6 +3063,7 @@ Ejemplo:
     patientSummary,
     attachedImages,
     findings3dRenders,
+    infographicReviews,
     infographicUrl,
     infographicClinicianUrl,
     directedInfographicUrl,
@@ -3102,6 +3140,7 @@ Ejemplo:
   useEffect(() => {
     let cancelled = false;
     const infographicRestoreSource = infographicSourceRef.current;
+    const infographicRestoreReport = infographicReportRef.current;
     (async () => {
       if (!bootDraft || !draftHasReport(bootDraft)) return;
       const fp =
@@ -3119,7 +3158,12 @@ Ejemplo:
       if (Array.isArray(bundle.findings3dRenders) && bundle.findings3dRenders.length) {
         setFindings3dRenders(bundle.findings3dRenders as any);
       }
-      if (infographicSourceRef.current === infographicRestoreSource) {
+      if (infographicSourceRef.current === infographicRestoreSource && infographicReportRef.current === infographicRestoreReport) {
+        if (bundle.infographicReviews && typeof bundle.infographicReviews === "object") {
+          setInfographicReviews(Object.fromEntries(Object.entries(bundle.infographicReviews).filter(([key, review]) =>
+            /^(general|directed):(patient|clinician)$/.test(key) && review && Array.isArray(review.reasons))
+            .map(([key, review]) => [key, { sourceKey: infographicRestoreSource, reasons: review.reasons.filter(reason => typeof reason === "string") }])));
+        }
         if (bundle.infographicUrl) setInfographicUrl(bundle.infographicUrl);
         if (bundle.infographicClinicianUrl) setInfographicClinicianUrl(bundle.infographicClinicianUrl);
         if (bundle.directedInfographicUrl) setDirectedInfographicUrl(bundle.directedInfographicUrl);
@@ -5106,13 +5150,16 @@ Ejemplo:
       const requestAudience = async (audience: "patient" | "clinician") => {
         const data = await requestInfographic({ ...baseBody, audience }, controller.signal);
         if (!isCurrent()) return { success: false };
-        if (data?.success && data?.imageUrl && data?.lateralityQa?.status === "needs_review") {
-          setInfographicReviews(previous => ({ ...previous, [`general:${audience}`]: {
-            sourceKey: infographicSourceKey,
-            reasons: Array.isArray(data.lateralityQa.reasons) ? data.lateralityQa.reasons : [],
-          } }));
-        }
         if (data?.success && data?.imageUrl) {
+          const reasons = data?.lateralityQa?.status === "needs_review" && Array.isArray(data.lateralityQa.reasons)
+            ? [...data.lateralityQa.reasons] : [];
+          if (infographicReportRef.current !== generatedReport) reasons.push("source_changed");
+          setInfographicReviews(previous => {
+            const next = { ...previous };
+            if (reasons.length) next[`general:${audience}`] = { sourceKey: infographicSourceKey, reasons };
+            else delete next[`general:${audience}`];
+            return next;
+          });
           if (audience === "patient") setInfographicUrl(data.imageUrl);
           else setInfographicClinicianUrl(data.imageUrl);
           if (!firstShown) { firstShown = true; setInfographicAudienceTab(audience); }
@@ -5156,11 +5203,6 @@ Ejemplo:
       else if (target === "clinician" && clinicianOk) setInfographicAudienceTab("clinician");
       else if (patientOk) setInfographicAudienceTab("patient");
       else if (clinicianOk) setInfographicAudienceTab("clinician");
-
-      const orient = patientData?.viewOrientation || clinicianData?.viewOrientation;
-      if (orient === "AP" || orient === "PA") {
-        setInfographicViewOrientation(orient);
-      }
 
       if (doPatient && doClinician && (!patientOk || !clinicianOk)) {
         setInfographicError(
@@ -5241,13 +5283,16 @@ Ejemplo:
       const requestAudience = async (audience: "patient" | "clinician") => {
         const data = await requestInfographic({ ...baseBody, audience }, controller.signal);
         if (!isCurrent()) return { success: false };
-        if (data?.success && data?.imageUrl && data?.lateralityQa?.status === "needs_review") {
-          setInfographicReviews(previous => ({ ...previous, [`directed:${audience}`]: {
-            sourceKey: infographicSourceKey,
-            reasons: Array.isArray(data.lateralityQa.reasons) ? data.lateralityQa.reasons : [],
-          } }));
-        }
         if (data?.success && data?.imageUrl) {
+          const reasons = data?.lateralityQa?.status === "needs_review" && Array.isArray(data.lateralityQa.reasons)
+            ? [...data.lateralityQa.reasons] : [];
+          if (infographicReportRef.current !== generatedReport) reasons.push("source_changed");
+          setInfographicReviews(previous => {
+            const next = { ...previous };
+            if (reasons.length) next[`directed:${audience}`] = { sourceKey: infographicSourceKey, reasons };
+            else delete next[`directed:${audience}`];
+            return next;
+          });
           if (audience === "patient") setDirectedInfographicUrl(data.imageUrl);
           else setDirectedInfographicClinicianUrl(data.imageUrl);
           if (!firstShown) { firstShown = true; setDirectedInfographicAudienceTab(audience); }
@@ -7471,6 +7516,7 @@ Ejemplo:
                       setStudyType(item.studyType);
                       handleLoadStudyType(item.studyType);
                       setClinicalHistory(item.clinicalHistory);
+                      beginInfographicCase();
                       setGeneratedReport(item.reportText || "");
                       setOriginalBaseReport(item.reportText || "");
                     }}
@@ -15447,6 +15493,7 @@ Ejemplo:
                                 setStudyType(item.studyType);
                                 handleLoadStudyType(item.studyType);
                                 setClinicalHistory(item.clinicalHistory);
+                                beginInfographicCase();
                                 setGeneratedReport(item.reportText);
                                 setOriginalBaseReport(item.reportText);
                               }}
@@ -15589,6 +15636,7 @@ Ejemplo:
                         setStudyType(viewingCloudStudy.studyType);
                         handleLoadStudyType(viewingCloudStudy.studyType);
                         setClinicalHistory(viewingCloudStudy.clinicalHistory);
+                        beginInfographicCase();
                         setGeneratedReport(viewingCloudStudy.reportText);
                         setOriginalBaseReport(viewingCloudStudy.reportText);
                         setCurrentCloudStudyId(viewingCloudStudy.id);

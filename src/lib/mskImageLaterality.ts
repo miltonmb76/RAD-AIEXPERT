@@ -91,7 +91,7 @@ CLINICAL SOURCE IS CLOSED: unmentioned structures are anatomical context only, n
 Do not mirror for layout. Do not replace anatomical correction with a different title. Do not print these camera instructions inside the image.`;
 }
 
-export type MskValidationReason = "laterality" | "orientation" | "clinical_site" | "clinical_text" | "spelling" | "instructions" | "review_unavailable" | "review_incomplete" | "invalid_image";
+export type MskValidationReason = "laterality" | "orientation" | "clinical_site" | "clinical_text" | "spelling" | "instructions" | "review_unavailable" | "review_incomplete" | "correction_unverified" | "invalid_image";
 export class MskImageValidationError extends Error {
   readonly validation: { reasons: MskValidationReason[]; generated: number; inspected: number; failedChecks: string[]; stopReason: string };
   constructor(reasons: MskValidationReason[] = ["orientation"], generated = 0, inspected = 0,
@@ -102,6 +102,7 @@ export class MskImageValidationError extends Error {
       spelling: "la escritura o legibilidad del texto", instructions: "la ausencia de instrucciones de dibujo en la imagen",
       review_unavailable: "la revisión automática, por un fallo de comunicación",
       review_incomplete: "la revisión automática, porque su respuesta llegó incompleta",
+      correction_unverified: "la revisión de la corrección automática",
       invalid_image: "el formato de la imagen generada",
     };
     const unique = [...new Set(reasons)];
@@ -237,6 +238,9 @@ export async function generateCheckedMskImage(args: {
       if (preview && previousImage) return draft(previousImage, lastReasons, generated);
       throw new MskImageValidationError(["invalid_image"], generated, inspected, [], "invalid_image");
     }
+    // Preview remains physician opt-in. A targeted edit is visible immediately
+    // as unverified; do not add a second serial audit or label it ai_checked.
+    if (preview && attempt === 2) return draft(imageUrl, [...lastReasons, "correction_unverified"], generated);
     let result: unknown;
     let reviewFailure: MskValidationReason = "review_incomplete";
     for (let reviewAttempt = 0; reviewAttempt < (preview ? 1 : 2); reviewAttempt++) {

@@ -4,7 +4,7 @@ dotenv.config();
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import sharp from "sharp";
 import { registerAtlas3DRoutes, reinforceCleanRenderPrompt } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
@@ -1908,6 +1908,7 @@ RECOMENDACIONES / CONDUCTA:
           contents: { parts: [{ text: planPrompt + (planAttempt ? "\nEl guion anterior no cumplió el formato breve. Devuelve 1–6 etiquetas: título ≤90 caracteres, etiqueta ≤72, detalle ≤120. Conserva medidas y calificadores completos; no transcribas párrafos." : "") }] },
           config: {
             ...executionConfig,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
             temperature: 0.2,
             responseMimeType: "application/json",
           },
@@ -2060,6 +2061,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
         },
         config: {
           ...executionConfig,
+          responseModalities: ["IMAGE"],
           imageConfig: {
             aspectRatio,
             imageSize,
@@ -2118,7 +2120,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
         const checked = await execution.run("review", executionConfig => ai.models.generateContent({
           model: getModelName(undefined),
           contents: { parts: [{ text: instruction }, { inlineData: { mimeType: match[1], data: match[2] } }] },
-          config: { ...executionConfig, responseMimeType: "application/json", temperature: 0 },
+          config: { ...executionConfig, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }, responseMimeType: "application/json", temperature: 0 },
         }));
         return String(checked.text || "");
       },

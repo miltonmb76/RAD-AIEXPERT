@@ -75,7 +75,7 @@ test("infographic uncertainty is viewable with its real review status, without r
 test("a concrete incorrect side gets one targeted edit, then remains visible for review without a false pass", async () => {
   const contract = { organ: 'shoulder', side: 'left', view: 'AP', format: 'infographic', clinicalSite: 'Synthetic' };
   for (const correction of ['still-wrong', 'fails', 'invalid']) {
-    let images = 0;
+    let images = 0, reviews = 0;
     const result = await generateCheckedMskImage({ contract, policy: 'preview',
       generate: async (_text, previous) => {
         images++;
@@ -85,9 +85,10 @@ test("a concrete incorrect side gets one targeted edit, then remains visible for
           if (correction === 'invalid') return 'not-an-image';
         }
         return image;
-      }, inspect: async () => observation(contract, { anatomicalSide: 'right' }),
+      }, inspect: async () => { reviews++; return observation(contract, { anatomicalSide: 'right' }); },
     });
     assert.equal(images, 2); assert.equal(result.imageUrl, image);
+    assert.equal(reviews, 1, 'preview correction does not launch another serial audit');
     assert.equal(result.lateralityQa.status, 'needs_review');
     assert.ok(result.lateralityQa.reasons.includes('laterality'));
   }
@@ -425,6 +426,7 @@ test("actual infographic route separates checked images from visible drafts with
       const app = { post: (_path, fn) => { handler = fn; } };
       const getGeminiClient = () => globalThis.__infographicFixture.ai;
       const getModelName = () => 'synthetic-model';
+      const ThinkingLevel = { LOW: 'LOW' };
       ${server.slice(server.indexOf('function handleGeminiError('), server.indexOf('\n}\n', server.indexOf('function handleGeminiError(')) + 2)}
     `;
     const output = await build({ stdin: { contents: setup + server.slice(start, end) + '\nexport { handler };', loader: "ts", resolveDir: resolve(".") },
@@ -472,6 +474,13 @@ test("actual infographic route separates checked images from visible drafts with
       assert.equal(passed.result.imageUrl, image);
       assert.equal(passed.result.copyPlanUsed, true);
       assert.equal(fixture.plans, 1);
+      for (const request of fixture.requests) {
+        if (request.config?.imageConfig) {
+          assert.deepEqual(request.config.responseModalities, ['IMAGE']);
+          assert.equal(request.config.imageConfig.imageSize, '2K');
+          assert.equal(request.config.thinkingConfig, undefined, 'image reasoning/quality policy is retained');
+        } else assert.equal(request.config.thinkingConfig.thinkingLevel, 'LOW');
+      }
       assert.match(fixture.requests[0].contents.parts[0].text, audience === "patient" ? /lenguaje sencillo para el paciente/ : /lenguaje técnico conciso para el médico/);
       const drawingPrompt = fixture.requests.find(r => r.config?.imageConfig).contents.parts[0].text;
       assert.match(drawingPrompt, /demostración visual rápida/);
@@ -522,10 +531,13 @@ test("actual infographic route separates checked images from visible drafts with
     fixture.images = fixture.audits = 0; fixture.requests = [];
     fixture.mimeType = "image/png";
     const left = { side: "left", view: "AP" };
-    fixture.auditQueue = [observation(left, { anatomicalSide: "right", clinicalSiteMatches: false, correctionCodes: ["wrong_structure"] }), observation(left)];
+    fixture.auditQueue = [observation(left, { anatomicalSide: "right", clinicalSiteMatches: false, correctionCodes: ["wrong_structure"] })];
     const corrected = await run(longBody);
     assert.equal(corrected.result.success, true);
     assert.match(corrected.result.imageUrl, /^data:image\/png;base64,/);
+    assert.equal(corrected.result.lateralityQa.status, 'needs_review');
+    assert.ok(corrected.result.lateralityQa.reasons.includes('correction_unverified'));
+    assert.equal(fixture.audits, 1, 'a preview edit must not wait for another full audit');
     const renders = fixture.requests.filter(r => r.config?.imageConfig);
     assert.equal(renders.length, 2);
     assert.equal(renders[0].contents.parts.filter(p => p.inlineData).length, 1, 'first generation receives the fixed orientation map');
@@ -637,6 +649,10 @@ test("actual UI action displays either ready version before its sibling settles 
       const infographicSourceRef = { get current() { return globalThis.__infographicUi.source; }, set current(v) { globalThis.__infographicUi.source = v; } };
       const infographicRequestsRef = { get current() { return globalThis.__infographicUi.runs; }, set current(v) { globalThis.__infographicUi.runs = v; } };
       const previousInfographicSourceRef = { get current() { return globalThis.__infographicUi.previousSource; }, set current(v) { globalThis.__infographicUi.previousSource = v; } };
+      const infographicReportRef = { get current() { return globalThis.__infographicUi.report ?? 'Synthetic clinical report'; }, set current(v) { globalThis.__infographicUi.report = v; } };
+      const previousInfographicReportRef = { get current() { return globalThis.__infographicUi.previousReport ?? 'Synthetic clinical report'; }, set current(v) { globalThis.__infographicUi.previousReport = v; } };
+      const infographicCaseEpochRef = { get current() { return globalThis.__infographicUi.epoch || 0; }, set current(v) { globalThis.__infographicUi.epoch = v; } };
+
       const directedTopic = 'Hallazgo ficticio', directedOrientation = '', clinicalScorecardData = null, directedCorrectionNotes = '', directedSections = [], directedRecommendations = 'none';
       const directedBriefIsReady = () => true, buildDirectedScorecardContext = () => '', resolveScorecardFinalDiagnosis = () => '';
       const generatedReport = 'Synthetic clinical report', studyType = 'Hombro', reportDate = '',
@@ -648,16 +664,91 @@ test("actual UI action displays either ready version before its sibling settles 
     const effectEnd = source.indexOf('  }, [infographicSourceKey]);', effectStart);
     assert.ok(effectStart > 0 && effectEnd > effectStart);
     const sourceChange = 'function changeStudy(infographicSourceKey) { infographicSourceRef.current = infographicSourceKey;\n' + source.slice(effectStart, effectEnd) + '}';
-    const restoreStart = source.indexOf('      if (infographicSourceRef.current === infographicRestoreSource) {');
+    const reportEffectStart = source.indexOf('    if (previousInfographicReportRef.current === generatedReport) return;');
+    const reportEffectEnd = source.indexOf('  }, [generatedReport, infographicSourceKey,', reportEffectStart);
+    assert.ok(reportEffectStart > 0 && reportEffectEnd > reportEffectStart);
+    const reportChange = 'function changeReport(generatedReport) { infographicReportRef.current = generatedReport; const { InfographicUrl: infographicUrl, InfographicClinicianUrl: infographicClinicianUrl, DirectedInfographicUrl: directedInfographicUrl, DirectedInfographicClinicianUrl: directedInfographicClinicianUrl } = globalThis.__infographicUi.state;\n' + source.slice(reportEffectStart, reportEffectEnd) + '}';
+    const caseStart = source.indexOf('  const beginInfographicCase = () => {');
+    const caseEnd = source.indexOf('  // Directed classic poster', caseStart);
+    const caseChange = source.slice(caseStart, caseEnd);
+    const keyStart = source.indexOf('  const infographicSourceKey = JSON.stringify([');
+    const keyEnd = source.indexOf('  ]);', keyStart) + 5;
+    assert.ok(keyStart > 0 && keyEnd > keyStart);
+    const identity = 'function identityForReport(generatedReport, epoch = 0) { const infographicCaseEpochRef = {current: epoch}; const patientId = "synthetic-patient", patientName = "", selectedWorklistPatientId = "", studyType = "Hombro", laterality = "Izquierda", infographicViewOrientation = "AP";\n' + source.slice(keyStart, keyEnd) + '; return infographicSourceKey; }';
+    const restoreStart = source.indexOf('      if (infographicSourceRef.current === infographicRestoreSource && infographicReportRef.current === infographicRestoreReport) {');
     const restoreEnd = source.indexOf('\n\n      if (bundle.clinicalScorecardData)', restoreStart);
     assert.ok(restoreStart > 0 && restoreEnd > restoreStart);
-    const restore = 'async function restoreStoredImage(load) { const infographicRestoreSource = infographicSourceRef.current; const bundle = await load;\n' + source.slice(restoreStart, restoreEnd) + '}';
-    const output = await build({ stdin: { contents: setup + source.slice(start, end) + sourceChange + restore + "\nexport { handleGenerateInfographic, handleGenerateDirectedInfographic, changeStudy, restoreStoredImage };", loader: "tsx", resolveDir: resolve('.') },
+    const restore = 'async function restoreStoredImage(load) { const infographicRestoreSource = infographicSourceRef.current; const infographicRestoreReport = infographicReportRef.current; const bundle = await load;\n' + source.slice(restoreStart, restoreEnd) + '}';
+    const output = await build({ stdin: { contents: setup + source.slice(start, end) + sourceChange + reportChange + caseChange + identity + restore + "\nexport { handleGenerateInfographic, handleGenerateDirectedInfographic, changeStudy, changeReport, beginInfographicCase, identityForReport, restoreStoredImage };", loader: "tsx", resolveDir: resolve('.') },
       bundle: true, write: false, platform: "node", format: "esm" });
     const file = join(folder, "ui.mjs"); await writeFile(file, output.outputFiles[0].text);
-    const { handleGenerateInfographic, handleGenerateDirectedInfographic, changeStudy, restoreStoredImage } = await import(pathToFileURL(file).href);
+    const { handleGenerateInfographic, handleGenerateDirectedInfographic, changeStudy, changeReport, beginInfographicCase, identityForReport, restoreStoredImage } = await import(pathToFileURL(file).href);
     const response = (ok, payload) => ({ ok, json: async () => payload });
     const initial = () => ({ state: {}, runs: { general: null, directed: null }, source: 'synthetic-a', previousSource: 'synthetic-a' });
+    assert.equal(identityForReport('Initial findings'), identityForReport('Enriched clinical findings'), 'background report updates must not change patient/study identity');
+    assert.notEqual(identityForReport('Initial findings', 0), identityForReport('Initial findings', 1), 'opening a distinct anonymous study still invalidates the old context');
+    for (const kind of ['general', 'directed']) for (const updateAt of ['before-any-image', 'after-first-image', 'after-both-images']) {
+      const handle = kind === 'general' ? handleGenerateInfographic : handleGenerateDirectedInfographic;
+      const prefix = kind === 'general' ? 'Infographic' : 'DirectedInfographic';
+      const fixture = { ...initial(), pending: [] };
+      fixture.fetch = (_url, options) => new Promise(resolve => fixture.pending.push({ resolve, signal: options.signal, body: JSON.parse(options.body) }));
+      globalThis.__infographicUi = fixture;
+      const running = handle();
+      assert.equal(fixture.pending.length, 2);
+      const publish = index => fixture.pending[index].resolve(response(true, { success: true, imageUrl: image, lateralityQa: { status: 'ai_checked' } }));
+      if (updateAt !== 'before-any-image') {
+        publish(0);
+        for (let i = 0; i < 40 && !fixture.state[`${prefix}Url`]; i++) await Promise.resolve();
+        assert.equal(fixture.state[`${prefix}Url`], image);
+      }
+      if (updateAt === 'after-both-images') { publish(1); await running; }
+      fixture.state[`Attach${prefix}ToPatientSummary`] = true;
+      fixture.state[`Attach${prefix}ToOfficialReport`] = true;
+      changeReport('Background module added new clinical findings');
+      assert.ok(fixture.pending.every(request => !request.signal.aborted), 'same-patient enrichment must not cancel either generation');
+      if (updateAt !== 'after-both-images') assert.equal(fixture.state[kind === 'general' ? 'IsGeneratingInfographic' : 'IsGeneratingDirectedInfographic'], true, 'the loading button stays active until this request actually finishes');
+      if (updateAt === 'before-any-image') publish(0);
+      if (updateAt !== 'after-both-images') { publish(1); await running; }
+      assert.equal(fixture.state[`${prefix}Url`], image, 'the first click must produce a visible image despite concurrent enrichment');
+      assert.equal(fixture.state[`${prefix}ClinicianUrl`], image);
+      assert.ok(fixture.state.InfographicReviews[`${kind}:patient`].reasons.includes('source_changed'));
+      assert.ok(fixture.state.InfographicReviews[`${kind}:clinician`].reasons.includes('source_changed'));
+      assert.equal(fixture.state[`Attach${prefix}ToPatientSummary`], false);
+      assert.equal(fixture.state[`Attach${prefix}ToOfficialReport`], false);
+      assert.equal(fixture.state[`${prefix}Error`], null);
+      assert.ok(fixture.pending.every(request => request.body.report === 'Synthetic clinical report'), 'each image keeps its exact click-time clinical source');
+    }
+    for (const kind of ['general', 'directed']) {
+      const handle = kind === 'general' ? handleGenerateInfographic : handleGenerateDirectedInfographic;
+      const fixture = { ...initial(), pending: [] };
+      fixture.fetch = (_url, options) => new Promise(resolve => fixture.pending.push({resolve, signal: options.signal}));
+      globalThis.__infographicUi = fixture;
+      const running = handle();
+      beginInfographicCase();
+      assert.equal(fixture.epoch, 1);
+      assert.ok(fixture.pending.every(request => request.signal.aborted));
+      changeStudy('next-anonymous-study');
+      for (const request of fixture.pending) request.resolve(response(true, {success:true, imageUrl:image}));
+      await running;
+      assert.equal(fixture.state.InfographicUrl, null);
+      assert.equal(fixture.state.DirectedInfographicUrl, null);
+    }
+    globalThis.__infographicUi = initial();
+    let releaseOldBundle;
+    const oldRestore = restoreStoredImage(new Promise(resolve => { releaseOldBundle = resolve; }));
+    changeReport('Report changed while local annexes load');
+    releaseOldBundle({infographicUrl: image, attachInfographicToPatientSummary:true});
+    await oldRestore;
+    assert.equal(globalThis.__infographicUi.state.InfographicUrl, undefined, 'delayed restoration cannot rebind old images to a newer report');
+    assert.equal(globalThis.__infographicUi.state.AttachInfographicToPatientSummary, false);
+    globalThis.__infographicUi = initial();
+    await restoreStoredImage(Promise.resolve({ infographicUrl: image, infographicReviews: {
+      'general:patient': { sourceKey: 'previous-page-epoch', reasons: ['source_changed'] },
+    } }));
+    assert.equal(globalThis.__infographicUi.state.InfographicUrl, image);
+    assert.deepEqual(globalThis.__infographicUi.state.InfographicReviews['general:patient'], {
+      sourceKey: 'synthetic-a', reasons: ['source_changed'],
+    }, 'outdated-source warning survives a page reload and is rebound to the restored case');
     for (const changed of [false, true]) {
       globalThis.__infographicUi = initial();
       let release;
