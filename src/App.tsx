@@ -43,6 +43,7 @@ import {
   Suite3DSuspense,
 } from "./appLazyModules";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { requestInfographic } from "./lib/infographicRequest";
 import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
@@ -306,6 +307,7 @@ export default function App() {
   const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
   /** AP = de frente (espejo); PA = de espaldas (mismos lados del cuadro) */
   const [infographicViewOrientation, setInfographicViewOrientation] = useState<InfographicViewOrientation>("AP");
+  const infographicRequestsRef = useRef<{ general: AbortController | null; directed: AbortController | null }>({ general: null, directed: null });
   // Directed classic poster (independent of general — can coexist and both attach)
   const [isGeneratingDirectedInfographic, setIsGeneratingDirectedInfographic] = useState<boolean>(false);
   /** Which directed poster audience is regenerating (null = idle). */
@@ -1550,6 +1552,33 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationSteps, setGenerationSteps] = useState<string>("");
   const [generatedReport, setGeneratedReport] = useState<string>(() => bootDraft?.generatedReport || "");
+
+  // A pending image belongs to this exact study, not to the next patient/report.
+  const infographicSourceKey = useMemo(() => JSON.stringify([
+    patientId, patientName, selectedWorklistPatientId, generatedReport, studyType, laterality, infographicViewOrientation,
+  ]), [patientId, patientName, selectedWorklistPatientId, generatedReport, studyType, laterality, infographicViewOrientation]);
+  const infographicSourceRef = useRef(infographicSourceKey);
+  infographicSourceRef.current = infographicSourceKey;
+  const previousInfographicSourceRef = useRef(infographicSourceKey);
+  useEffect(() => {
+    if (previousInfographicSourceRef.current === infographicSourceKey) return;
+    previousInfographicSourceRef.current = infographicSourceKey;
+    infographicRequestsRef.current.general?.abort();
+    infographicRequestsRef.current.directed?.abort();
+    infographicRequestsRef.current = { general: null, directed: null };
+    setIsGeneratingInfographic(false); setInfographicRegenAudience(null);
+    setIsGeneratingDirectedInfographic(false); setDirectedInfographicRegenAudience(null);
+    setInfographicUrl(null); setInfographicClinicianUrl(null);
+    setDirectedInfographicUrl(null); setDirectedInfographicClinicianUrl(null);
+    setAttachInfographicToOfficialReport(false); setAttachInfographicToPatientSummary(false);
+    setAttachDirectedInfographicToOfficialReport(false); setAttachDirectedInfographicToPatientSummary(false);
+    setInfographicError(null); setDirectedInfographicError(null);
+  }, [infographicSourceKey]);
+  useEffect(() => () => {
+    infographicRequestsRef.current.general?.abort();
+    infographicRequestsRef.current.directed?.abort();
+    infographicRequestsRef.current = { general: null, directed: null };
+  }, []);
 
   // --- INTERACTIVE SYNTACTIC HIGHLIGHTING AND DYNAMIC AESTHETIC STATES ---
   const [isSyntacticHighlightingActive, setIsSyntacticHighlightingActive] = useState<boolean>(true);
@@ -3069,6 +3098,7 @@ Ejemplo:
   // Hydrate annexes after soft-recover / reload (async IndexedDB).
   useEffect(() => {
     let cancelled = false;
+    const infographicRestoreSource = infographicSourceRef.current;
     (async () => {
       if (!bootDraft || !draftHasReport(bootDraft)) return;
       const fp =
@@ -3086,14 +3116,16 @@ Ejemplo:
       if (Array.isArray(bundle.findings3dRenders) && bundle.findings3dRenders.length) {
         setFindings3dRenders(bundle.findings3dRenders as any);
       }
-      if (bundle.infographicUrl) setInfographicUrl(bundle.infographicUrl);
-      if (bundle.infographicClinicianUrl) setInfographicClinicianUrl(bundle.infographicClinicianUrl);
-      if (bundle.directedInfographicUrl) setDirectedInfographicUrl(bundle.directedInfographicUrl);
-      if (bundle.directedInfographicClinicianUrl) setDirectedInfographicClinicianUrl(bundle.directedInfographicClinicianUrl);
-      setAttachInfographicToOfficialReport(Boolean(bundle.attachInfographicToOfficialReport));
-      setAttachInfographicToPatientSummary(Boolean(bundle.attachInfographicToPatientSummary));
-      setAttachDirectedInfographicToOfficialReport(Boolean(bundle.attachDirectedInfographicToOfficialReport));
-      setAttachDirectedInfographicToPatientSummary(Boolean(bundle.attachDirectedInfographicToPatientSummary));
+      if (infographicSourceRef.current === infographicRestoreSource) {
+        if (bundle.infographicUrl) setInfographicUrl(bundle.infographicUrl);
+        if (bundle.infographicClinicianUrl) setInfographicClinicianUrl(bundle.infographicClinicianUrl);
+        if (bundle.directedInfographicUrl) setDirectedInfographicUrl(bundle.directedInfographicUrl);
+        if (bundle.directedInfographicClinicianUrl) setDirectedInfographicClinicianUrl(bundle.directedInfographicClinicianUrl);
+        setAttachInfographicToOfficialReport(Boolean(bundle.attachInfographicToOfficialReport));
+        setAttachInfographicToPatientSummary(Boolean(bundle.attachInfographicToPatientSummary));
+        setAttachDirectedInfographicToOfficialReport(Boolean(bundle.attachDirectedInfographicToOfficialReport));
+        setAttachDirectedInfographicToPatientSummary(Boolean(bundle.attachDirectedInfographicToPatientSummary));
+      }
 
       if (bundle.clinicalScorecardData) setClinicalScorecardData(bundle.clinicalScorecardData as any);
       setIncludeScorecardInReport(Boolean(bundle.includeScorecardInReport));
@@ -3265,6 +3297,10 @@ Ejemplo:
     ) {
       return;
     }
+
+    infographicRequestsRef.current.general?.abort();
+    infographicRequestsRef.current.directed?.abort();
+    infographicRequestsRef.current = { general: null, directed: null };
 
     // --- Identidad de sesión / worklist activa ---
     setCurrentCloudStudyId("");
@@ -5023,6 +5059,11 @@ Ejemplo:
     const target: "patient" | "clinician" | "both" = opts?.audience || "both";
     const doPatient = target === "both" || target === "patient";
     const doClinician = target === "both" || target === "clinician";
+    if (infographicRequestsRef.current.general) return;
+    const controller = new AbortController();
+    infographicRequestsRef.current.general = controller;
+    const isCurrent = () => !controller.signal.aborted && infographicRequestsRef.current.general === controller &&
+      infographicSourceRef.current === infographicSourceKey;
     setIsGeneratingInfographic(true);
     setInfographicRegenAudience(target);
     setInfographicError(null);
@@ -5059,26 +5100,23 @@ Ejemplo:
       // request must not hide the other version that is already available.
       let firstShown = false;
       const requestAudience = async (audience: "patient" | "clinician") => {
-        const response = await fetch("/api/generate-infographic", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...baseBody, audience }),
-        });
-        const data = await response.json();
-        if (response.ok && data?.success && data?.imageUrl) {
+        const data = await requestInfographic({ ...baseBody, audience }, controller.signal);
+        if (!isCurrent()) return { success: false };
+        if (data?.success && data?.imageUrl) {
           if (audience === "patient") setInfographicUrl(data.imageUrl);
           else setInfographicClinicianUrl(data.imageUrl);
           if (!firstShown) { firstShown = true; setInfographicAudienceTab(audience); }
         }
-        return response.ok ? data : { success: false, error: data?.error || "No se pudo generar esta versión." };
+        return data;
       };
       const requests: Promise<any>[] = [];
       if (doPatient) requests.push(requestAudience("patient"));
       if (doClinician) requests.push(requestAudience("clinician"));
       const settled = await Promise.allSettled(requests);
       const payloads = settled.map(result => result.status === "fulfilled" ? result.value : {
-        success: false, error: "Se interrumpió la conexión al generar esta versión.",
+        success: false, error: result.reason?.message || "Se interrumpió la conexión al generar esta versión.",
       });
+      if (!isCurrent()) return;
       let patientData: any = null;
       let clinicianData: any = null;
       let pi = 0;
@@ -5122,10 +5160,13 @@ Ejemplo:
         );
       }
     } catch (err: any) {
-      setInfographicError(err.message || "Error al conectar con la API de infografias.");
+      if (isCurrent()) setInfographicError(err.message || "Error al conectar con la API de infografias.");
     } finally {
-      setIsGeneratingInfographic(false);
-      setInfographicRegenAudience(null);
+      if (infographicRequestsRef.current.general === controller) {
+        infographicRequestsRef.current.general = null;
+        setIsGeneratingInfographic(false);
+        setInfographicRegenAudience(null);
+      }
     }
   };
 
@@ -5146,6 +5187,11 @@ Ejemplo:
     const target: "patient" | "clinician" | "both" = opts?.audience || "both";
     const doPatient = target === "both" || target === "patient";
     const doClinician = target === "both" || target === "clinician";
+    if (infographicRequestsRef.current.directed) return;
+    const controller = new AbortController();
+    infographicRequestsRef.current.directed = controller;
+    const isCurrent = () => !controller.signal.aborted && infographicRequestsRef.current.directed === controller &&
+      infographicSourceRef.current === infographicSourceKey;
     setIsGeneratingDirectedInfographic(true);
     setDirectedInfographicRegenAudience(target);
     setDirectedInfographicError(null);
@@ -5181,27 +5227,25 @@ Ejemplo:
         scorecardContext: buildDirectedScorecardContext(clinicalScorecardData) || undefined,
         ...(notes ? { correctionNotes: notes } : {}),
       };
-      const requests: Promise<Response>[] = [];
-      if (doPatient) {
-        requests.push(
-          fetch("/api/generate-infographic", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...baseBody, audience: "patient" }),
-          })
-        );
-      }
-      if (doClinician) {
-        requests.push(
-          fetch("/api/generate-infographic", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...baseBody, audience: "clinician" }),
-          })
-        );
-      }
-      const responses = await Promise.all(requests);
-      const payloads = await Promise.all(responses.map((r) => r.json()));
+      let firstShown = false;
+      const requestAudience = async (audience: "patient" | "clinician") => {
+        const data = await requestInfographic({ ...baseBody, audience }, controller.signal);
+        if (!isCurrent()) return { success: false };
+        if (data?.success && data?.imageUrl) {
+          if (audience === "patient") setDirectedInfographicUrl(data.imageUrl);
+          else setDirectedInfographicClinicianUrl(data.imageUrl);
+          if (!firstShown) { firstShown = true; setDirectedInfographicAudienceTab(audience); }
+        }
+        return data;
+      };
+      const requests: Promise<any>[] = [];
+      if (doPatient) requests.push(requestAudience("patient"));
+      if (doClinician) requests.push(requestAudience("clinician"));
+      const settled = await Promise.allSettled(requests);
+      const payloads = settled.map(result => result.status === "fulfilled" ? result.value : {
+        success: false, error: result.reason?.message || "Se interrumpió la conexión al generar esta versión.",
+      });
+      if (!isCurrent()) return;
       let patientData: any = null;
       let clinicianData: any = null;
       let pi = 0;
@@ -5240,10 +5284,13 @@ Ejemplo:
         );
       }
     } catch (err: any) {
-      setDirectedInfographicError(err.message || "Error al generar la infografia dirigida.");
+      if (isCurrent()) setDirectedInfographicError(err.message || "Error al generar la infografia dirigida.");
     } finally {
-      setIsGeneratingDirectedInfographic(false);
-      setDirectedInfographicRegenAudience(null);
+      if (infographicRequestsRef.current.directed === controller) {
+        infographicRequestsRef.current.directed = null;
+        setIsGeneratingDirectedInfographic(false);
+        setDirectedInfographicRegenAudience(null);
+      }
     }
   };
 

@@ -42,6 +42,7 @@ import {
 } from "./src/lib/infographicLaterality";
 import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
 import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, MskImageValidationError, type MskImageContract } from "./src/lib/mskImageLaterality";
+import { createInfographicExecution, InfographicExecutionError, isInfographicImageConfigError, isTerminalInfographicError } from "./src/lib/infographicExecution";
 import {
   INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
   redactPatientIdentifiersForInfographic,
@@ -1739,6 +1740,11 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  * General and directed are independent products; the client may keep both.
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
+  const execution = createInfographicExecution();
+  let outcome = "error";
+  // A closed browser request must not start subsequent image generations.
+  const disconnected = () => { if (!res.writableEnded) execution.cancel(); };
+  res.once?.("close", disconnected);
   try {
     const {
       report,
@@ -1896,14 +1902,15 @@ RECOMENDACIONES / CONDUCTA:
           allowRecommendations: allowRecoThisAudience,
           lateralityBrief: [lateralityBlock, breastClockBlock].filter(Boolean).join("\n\n"),
         });
-        const planResp = await ai.models.generateContent({
+        const planResp = await execution.run("plan", executionConfig => ai.models.generateContent({
           model: planModel,
           contents: { parts: [{ text: planPrompt + (planAttempt ? "\nEl guion anterior no cumplió el formato breve. Devuelve 1–6 etiquetas: título ≤90 caracteres, etiqueta ≤72, detalle ≤120. Conserva medidas y calificadores completos; no transcribas párrafos." : "") }] },
           config: {
+            ...executionConfig,
             temperature: 0.2,
             responseMimeType: "application/json",
           },
-        });
+        }));
         const planRaw = extractJsonObject(String(planResp.text || "")) || planResp.text;
         const parsed =
           typeof planRaw === "string"
@@ -1912,10 +1919,7 @@ RECOMENDACIONES / CONDUCTA:
         copyPlan = normalizeInfographicCopyPlan(parsed, { strict: Boolean(mskContract) });
         if (copyPlan) break;
       } catch (planErr: any) {
-        console.warn(
-          "Infografía: no se pudo preparar el guion en este intento:",
-          planErr?.message || planErr
-        );
+        if (isTerminalInfographicError(planErr)) throw planErr;
       }
     }
     if (mskContract && !copyPlan) {
@@ -2045,19 +2049,20 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
 
     const tryGenerate = async (aspectRatio: string, imageSize: string, feedback = "", rejectedImage?: string) => {
       const reference = rejectedImage?.match(/^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/);
-      const response = await ai.models.generateContent({
+      const response = await execution.run("image", executionConfig => ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
         contents: {
           parts: [{ text: `${feedback}\n${promptText}\n${feedback}` },
             ...(reference ? [{ inlineData: { mimeType: reference[1], data: reference[2] } }] : [])],
         },
         config: {
+          ...executionConfig,
           imageConfig: {
             aspectRatio,
             imageSize,
           },
         },
-      });
+      }));
       let base64Image = "";
       let imageMime = "image/jpeg";
       const parts = response.candidates?.[0]?.content?.parts || [];
@@ -2091,9 +2096,10 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
         try {
           const imageUrl = await tryGenerate(aspectRatio, imageSize, feedback, rejectedImage);
           if (imageUrl) return imageUrl;
+          throw new Error("El generador no devolvió una imagen.");
         } catch (err) {
           lastError = err;
-          console.warn(`Infografía: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
+          if (!isInfographicImageConfigError(err)) throw err;
         }
       }
       if (lastError) throw lastError;
@@ -2105,15 +2111,17 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       inspect: async (candidate, instruction) => {
         const match = candidate.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
         if (!match) throw new Error("Invalid image");
-        const checked = await ai.models.generateContent({
+        const checked = await execution.run("review", executionConfig => ai.models.generateContent({
           model: getModelName(undefined),
           contents: { parts: [{ text: instruction }, { inlineData: { mimeType: match[1], data: match[2] } }] },
-          config: { responseMimeType: "application/json", temperature: 0 },
-        });
+          config: { ...executionConfig, responseMimeType: "application/json", temperature: 0 },
+        }));
         return String(checked.text || "");
       },
     })).imageUrl : await renderCandidate();
 
+    if (execution.error) throw execution.error;
+    outcome = "success";
     res.json({
       success: true,
       imageUrl,
@@ -2125,16 +2133,31 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       lateralitySummary: lateralityExtract.summary,
     });
   } catch (error: any) {
+    error = execution.error || error;
+    if (error instanceof InfographicExecutionError && error.reason === "disconnected") {
+      outcome = "cancelled";
+      return;
+    }
     if (error instanceof MskImageValidationError) console.warn(JSON.stringify({ event: "MSK_IMAGE_REJECTED",
       audience: req.body?.audience === "clinician" ? "clinician" : "patient", ...error.validation,
     }));
-    else console.error("Error en /api/generate-infographic:", error);
-    const friendlyError = handleGeminiError(error);
-    res.status(500).json({
+    const providerStatus = Number(error?.status);
+    // Provider errors can echo input text. Neither logs nor UI receive raw prose.
+    const friendlyError = error instanceof MskImageValidationError || error instanceof InfographicExecutionError ? error.message
+      : providerStatus === 429 ? "El servicio de IA está ocupado o alcanzó su límite de uso. Se detuvieron los intentos automáticos."
+      : providerStatus === 401 || providerStatus === 403 ? "El servicio de IA no autorizó la solicitud. Revisa la configuración del proveedor."
+      : "No se pudo completar la infografía. Se detuvieron los intentos automáticos; puedes volver a intentarlo.";
+    res.status(error instanceof InfographicExecutionError ? 504 : 500).json({
       success: false,
       error: friendlyError,
       ...(error instanceof MskImageValidationError ? { validation: error.validation } : {}),
     });
+  } finally {
+    res.removeListener?.("close", disconnected);
+    console.info(JSON.stringify({ event: "INFOGRAPHIC_TIMING", outcome,
+      audience: req.body?.audience === "clinician" ? "clinician" : "patient",
+      mode: req.body?.mode === "directed" ? "directed" : "general", ...execution.diagnostics(),
+    }));
   }
 });
 

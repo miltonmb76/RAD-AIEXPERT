@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { EventEmitter } from "node:events";
 import {
   resolveMskLaterality, detectMskView, detectMskOrgan, buildMskLandmarkBrief,
   acceptsMskVisualCheck, generateCheckedMskImage, generateMskPlan, MskImageValidationError, buildMskCorrectionBrief,
@@ -336,6 +337,7 @@ test("actual infographic route checks patient/clinician images and blocks failed
     const setup = `
       import { detectMskOrgan, resolveMskLaterality, mskSideLabel, generateCheckedMskImage, MskImageValidationError } from './src/lib/mskImageLaterality';
       import { buildInfographicLateralityPromptBlock, detectInfographicViewOrientation, extractInfographicLaterality, mergeLateralityIntoCopyPlan } from './src/lib/infographicLaterality';
+      import { createInfographicExecution, InfographicExecutionError, isInfographicImageConfigError, isTerminalInfographicError } from './src/lib/infographicExecution';
       import { buildInfographicBreastClockBrief } from './src/lib/infographicBreastClock';
       import { INFOGRAPHIC_PRIVACY_PROMPT_BLOCK, redactPatientIdentifiersForInfographic } from './src/lib/infographicPrivacy';
       import { INFOGRAPHIC_NO_REAL_US_PROMPT_BLOCK } from './src/lib/infographicNoRealUs';
@@ -356,19 +358,30 @@ test("actual infographic route checks patient/clinician images and blocks failed
       fixture.requests.push(request);
       if (request.config?.imageConfig) {
         fixture.images++;
+        if (fixture.holdImage) await fixture.holdImage;
+        if (fixture.emptyImage) return { candidates: [] };
+        if (fixture.imageError && fixture.images === 1) throw fixture.imageError;
+        if (fixture.providerStage === "image") throw Object.assign(new Error("PRIVATE_SYNTHETIC_PROVIDER_ERROR"), { status: 429 });
         if (fixture.failImageAt && fixture.images >= fixture.failImageAt) throw new Error("Synthetic image provider unavailable");
         return { candidates: [{ content: { parts: [{ inlineData: { data: 'U1lOVEhFVElD', ...(fixture.mimeType ? { mimeType: fixture.mimeType } : {}) } }] } }] };
       }
       if (request.contents?.parts?.some((part) => part.inlineData)) {
-        fixture.audits++; return { text: JSON.stringify(fixture.auditQueue.length ? fixture.auditQueue.shift() : fixture.check) };
+        fixture.audits++;
+        if (fixture.providerStage === "review") throw Object.assign(new Error("PRIVATE_SYNTHETIC_PROVIDER_ERROR"), { status: 429 });
+        return { text: JSON.stringify(fixture.auditQueue.length ? fixture.auditQueue.shift() : fixture.check) };
       }
       fixture.plans++;
+      if (fixture.providerStage === "plan") throw Object.assign(new Error("PRIVATE_SYNTHETIC_PROVIDER_ERROR"), { status: 429 });
       return { text: JSON.stringify(fixture.planQueue.length ? fixture.planQueue.shift() : briefPlan) };
     } } } };
     globalThis.__infographicFixture = fixture;
-    const run = async (body) => {
+    const run = async (body, options = {}) => {
       let code = 200, result;
-      await handler({ body }, { status(value) { code = value; return this; }, json(value) { result = value; return this; } });
+      const response = Object.assign(new EventEmitter(), { writableEnded: false,
+        status(value) { code = value; return this; }, json(value) { result = value; this.writableEnded = true; return this; } });
+      options.response?.(response);
+      await handler({ body }, response);
+      assert.equal(response.listenerCount("close"), 0, "close listener is removed after the request");
       return { code, result };
     };
     for (const organ of ["knee", "shoulder"]) for (const audience of ["patient", "clinician"]) {
@@ -457,6 +470,54 @@ test("actual infographic route checks patient/clinician images and blocks failed
       assert.equal(fixture.images, failAt, "no size/ratio fallback chain under a checked MSK candidate");
     }
     fixture.failImageAt = 0;
+    for (const stage of ["plan", "image", "review"]) {
+      fixture.plans = fixture.images = fixture.audits = 0;
+      fixture.requests = []; fixture.providerStage = stage;
+      const info = console.info; const diagnostics = [];
+      console.info = value => diagnostics.push(value);
+      let unavailable;
+      try { unavailable = await run(longBody); } finally { console.info = info; }
+      assert.equal(unavailable.result.success, false);
+      assert.doesNotMatch(JSON.stringify(unavailable.result), /PRIVATE_SYNTHETIC/);
+      assert.equal(fixture[stage === "plan" ? "plans" : stage === "image" ? "images" : "audits"], 1);
+      assert.equal(fixture.images, stage === "plan" ? 0 : 1);
+      assert.equal(diagnostics.length, 1);
+      const timing = JSON.parse(diagnostics[0]);
+      assert.equal(timing.event, "INFOGRAPHIC_TIMING");
+      assert.equal(timing.stopReason, "provider_error");
+      assert.doesNotMatch(diagnostics[0], /PRIVATE_SYNTHETIC|TÉCNICA|bursal|data:image/);
+      for (const request of fixture.requests) {
+        assert.equal(request.config.httpOptions.retryOptions.attempts, 1);
+        assert.ok(request.config.httpOptions.timeout > 0);
+        assert.ok(request.config.abortSignal instanceof AbortSignal);
+      }
+    }
+    fixture.providerStage = undefined;
+    // The existing non-MSK size fallback remains available for an explicit incompatibility.
+    fixture.images = fixture.audits = 0; fixture.requests = [];
+    fixture.imageError = Object.assign(new Error("imageSize 2K is not supported"), { status: 400 });
+    const compatible = await run({ studyType: "Ecografía renal", report: "Informe renal sintético." });
+    assert.equal(compatible.result.success, true);
+    assert.equal(fixture.images, 2);
+    assert.equal(fixture.requests.filter(r => r.config?.imageConfig)[1].config.imageConfig.imageSize, "1K");
+    fixture.imageError = undefined;
+    fixture.images = 0; fixture.emptyImage = true;
+    const empty = await run({ studyType: "Ecografía renal", report: "Informe renal sintético." });
+    assert.equal(empty.result.success, false);
+    assert.equal(empty.result.imageUrl, undefined);
+    assert.equal(fixture.images, 1, 'an empty provider reply must not launch four more render configurations');
+    fixture.emptyImage = false;
+    // Disconnect while a provider ignores abort: the handler still ends and never audits or returns the late image.
+    let releaseImage; fixture.holdImage = new Promise(resolve => { releaseImage = resolve; });
+    fixture.images = fixture.audits = 0; fixture.check = observation(left);
+    let response;
+    const disconnected = run(longBody, { response: value => { response = value; } });
+    for (let i = 0; i < 40 && !fixture.images; i++) await Promise.resolve();
+    assert.equal(fixture.images, 1);
+    response.emit("close");
+    assert.equal((await disconnected).result, undefined);
+    assert.equal(fixture.audits, 0);
+    releaseImage(); fixture.holdImage = undefined;
     fixture.images = fixture.audits = 0;
     fixture.check = observation(left, { view: "unknown", landmarksVisible: false });
     const uncertain = await run(longBody);
@@ -476,47 +537,120 @@ test("actual infographic route checks patient/clinician images and blocks failed
   }
 });
 
-test("actual UI action displays either ready version before its sibling settles and preserves it after a failure", async () => {
+test("actual UI action displays either ready version before its sibling settles and preserves it after a failure", async t => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = (...args) => globalThis.__infographicUi.fetch(...args);
   const folder = await mkdtemp(join(tmpdir(), "rad-infographic-ui-"));
   try {
     const source = await readFile("src/App.tsx", "utf8");
     const start = source.indexOf("  const handleGenerateInfographic = async");
-    const end = source.indexOf("  const handleGenerateDirectedInfographic", start);
+    const end = source.indexOf("  // ACTION: APPEND THE SELECTED CLASSIFICATION", start);
     assert.ok(start > 0 && end > start);
-    const setters = ["IsGeneratingInfographic", "InfographicRegenAudience", "InfographicError", "InfographicUrl", "InfographicClinicianUrl", "InfographicAudienceTab", "AttachInfographicToOfficialReport", "AttachInfographicToPatientSummary", "InfographicViewOrientation"];
+    const setters = ["IsGeneratingDirectedInfographic", "DirectedInfographicRegenAudience", "DirectedInfographicError", "DirectedInfographicUrl", "DirectedInfographicClinicianUrl", "DirectedInfographicAudienceTab", "DirectedTopic", "AttachDirectedInfographicToOfficialReport", "AttachDirectedInfographicToPatientSummary", "IsGeneratingInfographic", "InfographicRegenAudience", "InfographicError", "InfographicUrl", "InfographicClinicianUrl", "InfographicAudienceTab", "AttachInfographicToOfficialReport", "AttachInfographicToPatientSummary", "InfographicViewOrientation"];
     const setup = `
+      import { requestInfographic } from './src/lib/infographicRequest';
+      const infographicSourceKey = 'synthetic-a';
+      const infographicSourceRef = { get current() { return globalThis.__infographicUi.source; }, set current(v) { globalThis.__infographicUi.source = v; } };
+      const infographicRequestsRef = { get current() { return globalThis.__infographicUi.runs; }, set current(v) { globalThis.__infographicUi.runs = v; } };
+      const previousInfographicSourceRef = { get current() { return globalThis.__infographicUi.previousSource; }, set current(v) { globalThis.__infographicUi.previousSource = v; } };
+      const directedTopic = 'Hallazgo ficticio', directedOrientation = '', clinicalScorecardData = null, directedCorrectionNotes = '', directedSections = [], directedRecommendations = 'none';
+      const directedBriefIsReady = () => true, buildDirectedScorecardContext = () => '', resolveScorecardFinalDiagnosis = () => '';
       const generatedReport = 'Synthetic clinical report', studyType = 'Hombro', reportDate = '',
         projections = [], infographicViewOrientation = 'AP', laterality = 'Izquierda', diagnosisAnchor = '', infographicCorrectionNotes = '';
       const fetch = (...args) => globalThis.__infographicUi.fetch(...args);
       ${setters.map(key => `const set${key} = value => { globalThis.__infographicUi.state.${key} = value; };`).join("\n")}
     `;
-    const output = await build({ stdin: { contents: setup + source.slice(start, end) + "\nexport { handleGenerateInfographic };", loader: "tsx" },
-      write: false, platform: "node", format: "esm" });
+    const effectStart = source.indexOf('    if (previousInfographicSourceRef.current === infographicSourceKey) return;');
+    const effectEnd = source.indexOf('  }, [infographicSourceKey]);', effectStart);
+    assert.ok(effectStart > 0 && effectEnd > effectStart);
+    const sourceChange = 'function changeStudy(infographicSourceKey) { infographicSourceRef.current = infographicSourceKey;\n' + source.slice(effectStart, effectEnd) + '}';
+    const restoreStart = source.indexOf('      if (infographicSourceRef.current === infographicRestoreSource) {');
+    const restoreEnd = source.indexOf('\n\n      if (bundle.clinicalScorecardData)', restoreStart);
+    assert.ok(restoreStart > 0 && restoreEnd > restoreStart);
+    const restore = 'async function restoreStoredImage(load) { const infographicRestoreSource = infographicSourceRef.current; const bundle = await load;\n' + source.slice(restoreStart, restoreEnd) + '}';
+    const output = await build({ stdin: { contents: setup + source.slice(start, end) + sourceChange + restore + "\nexport { handleGenerateInfographic, handleGenerateDirectedInfographic, changeStudy, restoreStoredImage };", loader: "tsx", resolveDir: resolve('.') },
+      bundle: true, write: false, platform: "node", format: "esm" });
     const file = join(folder, "ui.mjs"); await writeFile(file, output.outputFiles[0].text);
-    const { handleGenerateInfographic } = await import(pathToFileURL(file).href);
+    const { handleGenerateInfographic, handleGenerateDirectedInfographic, changeStudy, restoreStoredImage } = await import(pathToFileURL(file).href);
     const response = (ok, payload) => ({ ok, json: async () => payload });
-    for (const fast of ["patient", "clinician"]) for (const failure of ["network", "rejection"]) {
+    const initial = () => ({ state: {}, runs: { general: null, directed: null }, source: 'synthetic-a', previousSource: 'synthetic-a' });
+    for (const changed of [false, true]) {
+      globalThis.__infographicUi = initial();
+      let release;
+      const restoring = restoreStoredImage(new Promise(resolve => { release = resolve; }));
+      if (changed) changeStudy('synthetic-b');
+      release({ infographicUrl: image, attachInfographicToPatientSummary: true });
+      await restoring;
+      assert.equal(globalThis.__infographicUi.state.InfographicUrl, changed ? null : image,
+        'slow local restoration must not put the previous study image back after a switch');
+      assert.equal(globalThis.__infographicUi.state.AttachInfographicToPatientSummary, !changed);
+    }
+    for (const kind of ["general", "directed"]) for (const fast of ["patient", "clinician"]) for (const failure of ["network", "rejection"]) {
+      const handle = kind === 'general' ? handleGenerateInfographic : handleGenerateDirectedInfographic;
+      const prefix = kind === 'general' ? '' : 'Directed';
+      const stateKey = value => prefix ? prefix + value : value;
+      const loading = kind === 'general' ? 'IsGeneratingInfographic' : 'IsGeneratingDirectedInfographic';
       let failSlow;
       const state = {};
-      globalThis.__infographicUi = { state, fetch: (_url, options) => {
+      globalThis.__infographicUi = { ...initial(), state, fetch: (_url, options) => {
         const audience = JSON.parse(options.body).audience;
         return audience === fast ? Promise.resolve(response(true, { success: true, imageUrl: image }))
           : new Promise((resolve, reject) => { failSlow = () => failure === "network" ? reject(new Error("synthetic offline"))
             : resolve(response(false, { success: false, error: "Synthetic rejected anatomy" })); });
       } };
-      const running = handleGenerateInfographic();
-      for (let i = 0; i < 20 && state.InfographicAudienceTab !== fast; i++) await Promise.resolve();
-      const readyKey = fast === "patient" ? "InfographicUrl" : "InfographicClinicianUrl";
-      const otherKey = fast === "patient" ? "InfographicClinicianUrl" : "InfographicUrl";
+      const running = handle();
+      for (let i = 0; i < 30 && state[stateKey('InfographicAudienceTab')] !== fast; i++) await Promise.resolve();
+      const readyKey = stateKey(fast === "patient" ? "InfographicUrl" : "InfographicClinicianUrl");
+      const otherKey = stateKey(fast === "patient" ? "InfographicClinicianUrl" : "InfographicUrl");
       assert.equal(state[readyKey], image, "ready checked image appears while the other request is still pending");
-      assert.equal(state.InfographicAudienceTab, fast);
-      assert.equal(state.IsGeneratingInfographic, true);
+      assert.equal(state[stateKey('InfographicAudienceTab')], fast);
+      assert.equal(state[loading], true);
       assert.equal(state[otherKey], null, "no image is published for the unfinished or rejected version");
       failSlow(); await running;
       assert.equal(state[readyKey], image, "a sibling failure must not discard the ready image");
       assert.equal(state[otherKey], null);
-      assert.match(state.InfographicError, /Se muestra la disponible/);
-      assert.equal(state.IsGeneratingInfographic, false);
+      assert.match(state[stateKey('InfographicError')], /Se muestra la disponible/);
+      assert.equal(state[loading], false);
+    }
+    for (const kind of ['general', 'directed']) {
+      const handle = kind === 'general' ? handleGenerateInfographic : handleGenerateDirectedInfographic;
+      const fixture = { ...initial(), pending: [] };
+      fixture.fetch = (_url, options) => new Promise(resolve => fixture.pending.push({ resolve, signal: options.signal }));
+      globalThis.__infographicUi = fixture;
+      const running = handle();
+      await handle();
+      assert.equal(fixture.pending.length, 2, 'a duplicate click must not launch another patient/clinician pair');
+      // Both requests ignore abort to simulate late delivery; the actual action must still discard their results.
+      changeStudy('synthetic-b');
+      for (const request of fixture.pending) {
+        assert.equal(request.signal.aborted, true);
+        request.resolve(response(true, { success: true, imageUrl: image }));
+      }
+      await running;
+      for (const key of ['InfographicUrl', 'InfographicClinicianUrl', 'DirectedInfographicUrl', 'DirectedInfographicClinicianUrl']) assert.equal(fixture.state[key], null);
+      assert.equal(fixture.state.IsGeneratingInfographic, false);
+      assert.equal(fixture.state.IsGeneratingDirectedInfographic, false);
+      assert.equal(fixture.state.AttachInfographicToOfficialReport, false);
+      assert.equal(fixture.state.AttachDirectedInfographicToPatientSummary, false);
+    }
+    for (const kind of ['general', 'directed']) {
+      const handle = kind === 'general' ? handleGenerateInfographic : handleGenerateDirectedInfographic;
+      const fixture = { ...initial(), pending: [] };
+      fixture.fetch = (_url, options) => new Promise(resolve => fixture.pending.push({ resolve, signal: options.signal }));
+      globalThis.__infographicUi = fixture;
+      const old = handle();
+      changeStudy('synthetic-b');
+      changeStudy('synthetic-a');
+      const current = handle();
+      await old;
+      const loading = kind === 'general' ? 'IsGeneratingInfographic' : 'IsGeneratingDirectedInfographic';
+      assert.equal(fixture.state[loading], true, 'the cancelled old run must not clear the newer run loading state');
+      for (const request of fixture.pending) request.resolve(response(true, { success: true, imageUrl: image }));
+      await current;
+      const result = kind === 'general' ? 'InfographicUrl' : 'DirectedInfographicUrl';
+      assert.equal(fixture.state[result], image);
+      assert.equal(fixture.state[loading], false);
     }
   } finally {
     delete globalThis.__infographicUi;
